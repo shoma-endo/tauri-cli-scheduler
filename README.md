@@ -1,17 +1,19 @@
-# Claude Code Runner
+# CLI Scheduler
 
-<img src="app.png" alt="Claude Code Runner" width="128" height="128">
+<img src="app.png" alt="CLI Scheduler" width="128" height="128">
 
-macOS上でiTermを通じて、指定した時刻にClaude Codeコマンドを実行するTauri 2.0デスクトップアプリケーション。
+macOS上でiTermを通じて、指定した時刻にClaude CodeまたはCodex CLIコマンドを実行するTauri 2.0デスクトップアプリケーション。
 
 ## 機能
 
-- 🕐 **スケジュール実行**: 指定した時刻にClaudeコマンドを実行
+- 🕐 **スケジュール実行**: 指定した時刻にCLIコマンドを実行
+- 🔀 **マルチツール対応**: Claude CodeとCodexをタブで切り替え
 - 🔄 **Rate Limit自動リトライ**: Rate Limitを検出したら自動的に再実行
 - 📊 **リアルタイム監視**: 実行状況とターミナル出力を追跡
-- 💾 **設定の永続化**: 設定を保存して次回も利用可能
+- 💾 **設定の永続化**: 各ツールの設定を保存して次回も利用可能
 - 🖥️ **iTerm統合**: iTermとのシームレスな統合
 - 🎯 **ウィンドウ管理**: 新規ウィンドウまたは既存セッションでの実行を選択可能
+- 🔧 **拡張可能な設計**: 将来の新しいCLIツール追加に対応
 
 ![Claude Code Runner](https://storage.googleapis.com/zenn-user-upload/84e3d8897c85-20250623.png)
 
@@ -19,7 +21,9 @@ macOS上でiTermを通じて、指定した時刻にClaude Codeコマンドを�
 
 - macOS（iTerm統合のため必須）
 - [iTerm](https://iterm2.com/)がインストールされていること
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)がインストール・設定済みであること
+- 以下のいずれか（または両方）がインストール・設定済みであること：
+  - [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)
+  - [Codex CLI](https://github.com/openai/codex)
 - Node.js 20以上とnpm/pnpm（ビルド用）
 - Rustツールチェーン（ビルド用）
 
@@ -83,11 +87,27 @@ npm run tauri:build
 ### 基本的な使用方法
 
 1. **アプリケーションを起動**
-2. **実行時刻を設定**: Claudeコマンドを実行する時刻を選択
-3. **ディレクトリを選択**: コマンドを実行する作業ディレクトリを選択
-4. **オプションを設定**: Claude Codeのオプションを設定（デフォルト: `--model opus`）
-5. **コマンドを入力**: Claudeに実行させたいコマンドを入力
-6. **「開始」をクリック**: アプリは指定時刻まで待機して実行
+2. **ツールを選択**: タブで「Claude Code」または「Codex」を選択
+3. **実行時刻を設定**: コマンドを実行する時刻を選択
+4. **ディレクトリを選択**: コマンドを実行する作業ディレクトリを選択
+5. **ツール固有の設定**: 各ツールのオプションを設定
+6. **コマンドを入力**: 実行させたいコマンドを入力
+7. **「開始」をクリック**: アプリは指定時刻まで待機して実行
+
+### ツール別設定
+
+#### Claude Code
+- **オプション**: Claude Codeのコマンドラインオプション（デフォルト: `--model opus`）
+- **コマンド**: Claudeに実行させたい命令
+
+#### Codex
+- **モデル**: 使用するモデルを選択（codex-mini-latest, gpt-5-codex, gpt-5, o3）
+- **承認モード**:
+  - `Suggest`: すべての変更を確認してから適用（推奨）
+  - `Auto`: 安全な変更は自動適用、リスクのある変更は確認
+  - `Full Auto`: すべての変更を自動適用
+- **Web検索**: インターネット検索を使用してコンテキストを収集
+- **コマンド**: Codexに実行させたい命令
 
 ### 実行モード
 
@@ -150,10 +170,19 @@ npm run tauri dev
 ```
 ├── src/                    # フロントエンド（React + TypeScript）
 │   ├── App.tsx            # メインアプリケーションコンポーネント
+│   ├── components/        # UIコンポーネント
+│   │   ├── Header.tsx         # ヘッダー（バージョン表示）
+│   │   ├── TabSelector.tsx    # ツール切り替えタブ
+│   │   ├── CommonSettings.tsx # 共通設定（時刻、ディレクトリ等）
+│   │   ├── ExecutionPanel.tsx # 実行パネル（ボタン、出力表示）
+│   │   ├── ClaudeSettings.tsx # Claude Code固有設定
+│   │   └── CodexSettings.tsx  # Codex固有設定
+│   ├── types/             # 型定義
+│   │   └── tools.ts       # ツール関連の型
 │   └── assets/            # 静的アセット
 ├── src-tauri/             # バックエンド（Rust）
 │   ├── src/
-│   │   └── lib.rs        # Tauriのコアロジック
+│   │   └── lib.rs        # Tauriのコアロジック（Claude/Codex両対応）
 │   └── tauri.conf.json   # Tauri設定
 └── CLAUDE.md             # AIアシスタント用の指示
 ```
@@ -162,15 +191,24 @@ npm run tauri dev
 
 ### デフォルト設定
 
-- **モデル**: `opus`（Claudeの最も高性能なモデル）
+#### Claude Code
+- **オプション**: `--model opus`
 - **実行モード**: 新規iTermウィンドウ
-- **自動リトライ**: デフォルトで無効
+- **自動リトライ**: 無効
+
+#### Codex
+- **モデル**: `codex-mini-latest`
+- **承認モード**: `Suggest`
+- **Web検索**: 無効
+- **実行モード**: 新規iTermウィンドウ
+- **自動リトライ**: 無効
 
 ### 永続化される設定
 
-以下の設定はlocalStorageに保存されます：
+以下の設定はlocalStorageに保存されます（ツールごとに独立）：
+- 選択中のツール（Claude Code / Codex）
 - ターゲットディレクトリ
-- Claudeオプション
+- ツール固有オプション
 - 最後のコマンド
 - 自動リトライの設定
 - ウィンドウモードの設定
