@@ -3523,7 +3523,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tauri-claude-code-runner"
+name = "tauri-cli-scheduler"
 version = "25.7.4"
 dependencies = [
  "chrono",

@@ -1,5 +1,5 @@
 {
-  "name": "tauri-claude-code-runner",
+  "name": "tauri-cli-scheduler",
   "private": true,
   "version": "25.7.4",
   "type": "module",
