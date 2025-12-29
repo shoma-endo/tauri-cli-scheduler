@@ -27,32 +27,41 @@ interface AppSettings {
 }
 
 function App() {
-  const now = new Date();
-  const defaultTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes() + 1).padStart(2, "0")}`;
+  function getDefaultTime() {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 1);
+    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  }
+
+  const defaultTime = getDefaultTime();
 
   // アプリケーション設定を管理
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem("cliRunnerSettings");
     if (saved) {
-      const parsed = JSON.parse(saved);
-      // 実行時刻は常に現在時刻+1分
-      if (parsed.claude) {
-        parsed.claude.executionTime = defaultTime;
+      try {
+        const parsed = JSON.parse(saved);
+        // 実行時刻は常に現在時刻+1分
+        if (parsed.claude) {
+          parsed.claude.executionTime = defaultTime;
+        }
+        if (parsed.codex) {
+          parsed.codex.executionTime = defaultTime;
+        }
+        // 新しいプロパティのデフォルト値
+        if (!parsed.activeTab) {
+          parsed.activeTab = "claude";
+        }
+        if (!parsed.claude) {
+          parsed.claude = { ...DEFAULT_CLAUDE_SETTINGS, executionTime: defaultTime };
+        }
+        if (!parsed.codex) {
+          parsed.codex = { ...DEFAULT_CODEX_SETTINGS, executionTime: defaultTime };
+        }
+        return parsed;
+      } catch (error) {
+        console.warn("Failed to parse saved settings, using defaults.", error);
       }
-      if (parsed.codex) {
-        parsed.codex.executionTime = defaultTime;
-      }
-      // 新しいプロパティのデフォルト値
-      if (!parsed.activeTab) {
-        parsed.activeTab = "claude";
-      }
-      if (!parsed.claude) {
-        parsed.claude = { ...DEFAULT_CLAUDE_SETTINGS, executionTime: defaultTime };
-      }
-      if (!parsed.codex) {
-        parsed.codex = { ...DEFAULT_CODEX_SETTINGS, executionTime: defaultTime };
-      }
-      return parsed;
     }
     return {
       activeTab: "claude" as ToolType,

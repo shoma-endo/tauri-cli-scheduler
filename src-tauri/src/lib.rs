@@ -11,6 +11,14 @@ struct AppState {
     cancel_flag: Arc<Mutex<bool>>,
 }
 
+fn escape_applescript_string(input: &str) -> String {
+    input
+        .replace('\\', r"\\")
+        .replace('"', r#"\""#)
+        .replace('\n', r"\n")
+        .replace('\r', r"\r")
+}
+
 #[derive(Serialize, Deserialize)]
 struct ExecutionResult {
     status: String,
@@ -97,8 +105,8 @@ async fn execute_claude_command(
         *cancel_flag = false;
     }
 
-    // Check if target directory exists
-    if !std::path::Path::new(&target_directory).exists() {
+    // Check if target directory exists (only for new window mode)
+    if use_new_window && !std::path::Path::new(&target_directory).exists() {
         let mut is_running = is_running_clone.lock().unwrap();
         *is_running = false;
         return Err(format!("ディレクトリが存在しません: {}", target_directory));
@@ -508,6 +516,10 @@ async fn execute_applescript_internal(
     claude_command: &str,
     use_new_window: bool,
 ) -> Result<String, String> {
+    let escaped_target_directory = escape_applescript_string(target_directory);
+    let escaped_claude_options = escape_applescript_string(claude_options);
+    let escaped_claude_command = escape_applescript_string(claude_command);
+
     let applescript = if use_new_window {
         // Create new window
         format!(
@@ -524,14 +536,14 @@ tell application "iTerm"
 
     tell current session of current window
         -- ディレクトリに移動
-        write text "cd " & targetDirectory
+        write text "cd " & quoted form of targetDirectory
 
         -- Claude Code を実行
-        write text "claude --dangerously-skip-permissions " & claudeOptions & " \"" & claudeCommand & "\""
+        write text "claude --dangerously-skip-permissions " & claudeOptions & " " & quoted form of claudeCommand
     end tell
 end tell
             "#,
-            target_directory, claude_options, claude_command
+            escaped_target_directory, escaped_claude_options, escaped_claude_command
         )
     } else {
         // Use existing window - send command only
@@ -557,7 +569,7 @@ tell application "iTerm"
     end if
 end tell
             "#,
-            claude_command
+            escaped_claude_command
         )
     };
 
@@ -1082,6 +1094,10 @@ async fn execute_codex_applescript_internal(
 
     let options_str = options.join(" ");
 
+    let escaped_target_directory = escape_applescript_string(target_directory);
+    let escaped_codex_options = escape_applescript_string(&options_str);
+    let escaped_codex_command = escape_applescript_string(codex_command);
+
     let applescript = if use_new_window {
         format!(
             r#"
@@ -1097,14 +1113,14 @@ tell application "iTerm"
 
     tell current session of current window
         -- ディレクトリに移動
-        write text "cd " & targetDirectory
+        write text "cd " & quoted form of targetDirectory
 
         -- Codex を実行
-        write text "codex " & codexOptions & " \"" & codexCommand & "\""
+        write text "codex " & codexOptions & " " & quoted form of codexCommand
     end tell
 end tell
             "#,
-            target_directory, options_str, codex_command
+            escaped_target_directory, escaped_codex_options, escaped_codex_command
         )
     } else {
         format!(
@@ -1129,7 +1145,7 @@ tell application "iTerm"
     end if
 end tell
             "#,
-            codex_command
+            escaped_codex_command
         )
     };
 
