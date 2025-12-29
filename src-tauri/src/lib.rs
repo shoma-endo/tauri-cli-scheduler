@@ -645,6 +645,515 @@ end tell
 }
 
 #[tauri::command]
+async fn execute_codex_command(
+    execution_time: String, // HH:MM format
+    target_directory: String,
+    codex_model: String,
+    codex_approval_mode: String,
+    codex_enable_search: bool,
+    codex_command: String,
+    auto_retry_on_rate_limit: bool,
+    use_new_window: bool,
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<ExecutionResult, String> {
+    let is_running_clone = state.is_running.clone();
+    let cancel_flag_clone = state.cancel_flag.clone();
+
+    {
+        let mut is_running = is_running_clone.lock().unwrap();
+        if *is_running {
+            return Err("コマンドは既に実行中です".to_string());
+        }
+        *is_running = true;
+
+        let mut cancel_flag = cancel_flag_clone.lock().unwrap();
+        *cancel_flag = false;
+    }
+
+    // Check if target directory exists (only for new window mode)
+    if use_new_window && !std::path::Path::new(&target_directory).exists() {
+        let mut is_running = is_running_clone.lock().unwrap();
+        *is_running = false;
+        return Err(format!("ディレクトリが存在しません: {}", target_directory));
+    }
+
+    // Parse execution time
+    let parts: Vec<&str> = execution_time.split(':').collect();
+    if parts.len() != 2 {
+        let mut is_running = is_running_clone.lock().unwrap();
+        *is_running = false;
+        return Err("時刻の形式が正しくありません".to_string());
+    }
+
+    let hour: u32 = match parts[0].parse() {
+        Ok(h) => h,
+        Err(_) => {
+            let mut is_running = is_running_clone.lock().unwrap();
+            *is_running = false;
+            return Err("時間の解析エラー".to_string());
+        }
+    };
+
+    let minute: u32 = match parts[1].parse() {
+        Ok(m) => m,
+        Err(_) => {
+            let mut is_running = is_running_clone.lock().unwrap();
+            *is_running = false;
+            return Err("分の解析エラー".to_string());
+        }
+    };
+
+    // Calculate wait time
+    let now = chrono::Local::now();
+    let mut target = match chrono::Local::now()
+        .with_hour(hour)
+        .and_then(|t| t.with_minute(minute))
+        .and_then(|t| t.with_second(0))
+    {
+        Some(t) => t,
+        None => {
+            let mut is_running = is_running_clone.lock().unwrap();
+            *is_running = false;
+            return Err("時刻の設定エラー".to_string());
+        }
+    };
+
+    // If target time is in the past, move to tomorrow
+    if target <= now {
+        target = target + chrono::Duration::days(1);
+    }
+
+    let wait_duration = target.signed_duration_since(now);
+    let wait_millis = wait_duration.num_milliseconds() as u64;
+
+    // Wait until target time with cancellation check
+    let check_interval = Duration::from_secs(1);
+    let mut elapsed = Duration::from_millis(0);
+    let total_wait = Duration::from_millis(wait_millis);
+
+    while elapsed < total_wait {
+        // Check cancel flag
+        {
+            let cancel = cancel_flag_clone.lock().unwrap();
+            if *cancel {
+                let mut is_running = is_running_clone.lock().unwrap();
+                *is_running = false;
+                return Err("実行がキャンセルされました".to_string());
+            }
+        }
+
+        sleep(check_interval).await;
+        elapsed += check_interval;
+    }
+
+    // Send event to frontend that execution is starting
+    app.emit("execution-started", "").ok();
+
+    // Execute AppleScript for Codex
+    let result = execute_codex_applescript(
+        &target_directory,
+        &codex_model,
+        &codex_approval_mode,
+        codex_enable_search,
+        &codex_command,
+        auto_retry_on_rate_limit,
+        use_new_window,
+        &app,
+        &state,
+    )
+    .await;
+
+    let mut is_running = is_running_clone.lock().unwrap();
+    *is_running = false;
+
+    result
+}
+
+async fn execute_codex_applescript(
+    target_directory: &str,
+    codex_model: &str,
+    codex_approval_mode: &str,
+    codex_enable_search: bool,
+    codex_command: &str,
+    auto_retry_on_rate_limit: bool,
+    use_new_window: bool,
+    app: &tauri::AppHandle,
+    state: &State<'_, AppState>,
+) -> Result<ExecutionResult, String> {
+    execute_codex_applescript_internal(
+        target_directory,
+        codex_model,
+        codex_approval_mode,
+        codex_enable_search,
+        codex_command,
+        use_new_window,
+    )
+    .await?;
+
+    // Monitor for completion (similar to Claude but with Codex-specific patterns)
+    if auto_retry_on_rate_limit {
+        let start_time = std::time::Instant::now();
+        let mut had_active_session = false;
+        let mut inactive_count = 0;
+        let mut first_inactive_time: Option<std::time::Instant> = None;
+        let mut rate_limit_count = 0;
+
+        loop {
+            // Check if cancelled
+            {
+                let cancel_flag = state.cancel_flag.lock().unwrap();
+                if *cancel_flag {
+                    return Ok(ExecutionResult {
+                        status: "cancelled".to_string(),
+                        terminal_output: None,
+                        needs_retry: Some(false),
+                        retry_time: None,
+                    });
+                }
+            }
+
+            sleep(Duration::from_secs(60)).await;
+
+            let output = get_terminal_output("iTerm").await?;
+            app.emit("terminal-output", &output).ok();
+
+            // Check for active Codex session indicators
+            let has_active_session = output.contains("codex") || output.contains("Codex");
+            let has_rate_limit = output.contains("rate limit") || output.contains("Rate limit");
+
+            if had_active_session && !has_active_session {
+                inactive_count += 1;
+                println!("Codex session inactive (count: {})", inactive_count);
+
+                if inactive_count == 1 {
+                    first_inactive_time =
+                        Some(std::time::Instant::now() - Duration::from_secs(60));
+                }
+
+                if inactive_count >= 3 && !has_rate_limit {
+                    let completion_time =
+                        first_inactive_time.unwrap_or(std::time::Instant::now());
+                    let elapsed = completion_time.duration_since(start_time);
+                    let minutes = elapsed.as_secs() / 60;
+                    let seconds = elapsed.as_secs() % 60;
+
+                    println!("Codex processing completed after {}m{}s", minutes, seconds);
+
+                    return Ok(ExecutionResult {
+                        status: format!("completed_in_{}m{}s", minutes, seconds),
+                        terminal_output: Some(output),
+                        needs_retry: Some(false),
+                        retry_time: None,
+                    });
+                }
+            } else if has_active_session {
+                inactive_count = 0;
+                first_inactive_time = None;
+                had_active_session = true;
+            }
+
+            // Check for rate limit
+            if has_rate_limit {
+                rate_limit_count += 1;
+                println!("Rate limit detected (count: {})", rate_limit_count);
+
+                if rate_limit_count >= 3 {
+                    let now = chrono::Local::now();
+                    let current_hour = now.hour();
+                    let current_minute = now.minute();
+
+                    let next_hour = if current_minute == 0 {
+                        current_hour
+                    } else {
+                        (current_hour + 1) % 24
+                    };
+
+                    let mut next_execution = now
+                        .with_hour(next_hour)
+                        .ok_or("時間の設定エラー")?
+                        .with_minute(1)
+                        .ok_or("分の設定エラー")?
+                        .with_second(0)
+                        .ok_or("秒の設定エラー")?;
+
+                    if next_execution <= now {
+                        next_execution = next_execution + chrono::Duration::days(1);
+                    }
+
+                    let wait_duration = next_execution.signed_duration_since(now);
+                    let wait_seconds = wait_duration.num_seconds();
+                    let wait_minutes = wait_seconds / 60;
+
+                    println!(
+                        "Rate limit detected (3 consecutive), scheduling re-execution at {:02}:01",
+                        if next_execution.day() != now.day() {
+                            (next_hour + 24) % 24
+                        } else {
+                            next_hour
+                        }
+                    );
+
+                    app.emit(
+                        "terminal-output",
+                        &format!(
+                            "Rate limit detected (3回連続). 次の実行時刻: {:02}:01 (残り約{}分)",
+                            if next_execution.day() != now.day() {
+                                (next_hour + 24) % 24
+                            } else {
+                                next_hour
+                            },
+                            wait_minutes
+                        ),
+                    )
+                    .ok();
+                    app.emit(
+                        "rate-limit-retry-scheduled",
+                        format!(
+                            "{:02}:01",
+                            if next_execution.day() != now.day() {
+                                (next_hour + 24) % 24
+                            } else {
+                                next_hour
+                            }
+                        ),
+                    )
+                    .ok();
+
+                    let mut waited = Duration::from_secs(0);
+                    let total_wait = Duration::from_secs(wait_seconds as u64);
+
+                    while waited < total_wait {
+                        {
+                            let cancel_flag = state.cancel_flag.lock().unwrap();
+                            if *cancel_flag {
+                                return Ok(ExecutionResult {
+                                    status: "cancelled".to_string(),
+                                    terminal_output: None,
+                                    needs_retry: Some(false),
+                                    retry_time: None,
+                                });
+                            }
+                        }
+
+                        sleep(Duration::from_secs(60)).await;
+                        waited += Duration::from_secs(60);
+
+                        let remaining_seconds = total_wait.as_secs() - waited.as_secs();
+                        let remaining_minutes = remaining_seconds / 60;
+                        let status_update = format!(
+                            "Rate limit detected. 次の実行を待機中 (残り約{}分)",
+                            remaining_minutes
+                        );
+                        app.emit("terminal-output", &status_update).ok();
+                    }
+
+                    send_continue_to_terminal("iTerm").await?;
+                    rate_limit_count = 0;
+                }
+            } else {
+                if rate_limit_count > 0 {
+                    println!(
+                        "Rate limit not found, resetting counter from {}",
+                        rate_limit_count
+                    );
+                }
+                rate_limit_count = 0;
+            }
+        }
+    } else {
+        let start_time = std::time::Instant::now();
+        let mut had_active_session = false;
+        let mut inactive_count = 0;
+        let mut first_inactive_time: Option<std::time::Instant> = None;
+        let mut rate_limit_count = 0;
+
+        loop {
+            {
+                let cancel_flag = state.cancel_flag.lock().unwrap();
+                if *cancel_flag {
+                    return Ok(ExecutionResult {
+                        status: "cancelled".to_string(),
+                        terminal_output: None,
+                        needs_retry: Some(false),
+                        retry_time: None,
+                    });
+                }
+            }
+
+            sleep(Duration::from_secs(60)).await;
+
+            let output = get_terminal_output("iTerm").await?;
+            app.emit("terminal-output", &output).ok();
+
+            let has_active_session = output.contains("codex") || output.contains("Codex");
+            let has_rate_limit = output.contains("rate limit") || output.contains("Rate limit");
+
+            if had_active_session && !has_active_session {
+                inactive_count += 1;
+                println!("Codex session inactive (count: {})", inactive_count);
+
+                if inactive_count == 1 {
+                    first_inactive_time =
+                        Some(std::time::Instant::now() - Duration::from_secs(60));
+                }
+
+                if inactive_count >= 3 && !has_rate_limit {
+                    let completion_time =
+                        first_inactive_time.unwrap_or(std::time::Instant::now());
+                    let elapsed = completion_time.duration_since(start_time);
+                    let minutes = elapsed.as_secs() / 60;
+                    let seconds = elapsed.as_secs() % 60;
+
+                    println!("Codex processing completed after {}m{}s", minutes, seconds);
+
+                    return Ok(ExecutionResult {
+                        status: format!("completed_in_{}m{}s", minutes, seconds),
+                        terminal_output: Some(output),
+                        needs_retry: Some(false),
+                        retry_time: None,
+                    });
+                }
+            } else if has_active_session {
+                inactive_count = 0;
+                first_inactive_time = None;
+                had_active_session = true;
+            }
+
+            if has_rate_limit {
+                rate_limit_count += 1;
+                println!("Rate limit detected (count: {})", rate_limit_count);
+
+                if rate_limit_count >= 3 {
+                    println!("Rate limit detected (3 consecutive), terminating as auto-retry is disabled");
+                    app.emit(
+                        "terminal-output",
+                        "Rate limit detected (3回連続). 自動再実行は無効のため終了します。",
+                    )
+                    .ok();
+
+                    return Ok(ExecutionResult {
+                        status: "rate_limit_detected".to_string(),
+                        terminal_output: Some(output),
+                        needs_retry: Some(false),
+                        retry_time: None,
+                    });
+                }
+            } else {
+                if rate_limit_count > 0 {
+                    println!(
+                        "Rate limit not found, resetting counter from {}",
+                        rate_limit_count
+                    );
+                }
+                rate_limit_count = 0;
+            }
+        }
+    }
+}
+
+async fn execute_codex_applescript_internal(
+    target_directory: &str,
+    codex_model: &str,
+    codex_approval_mode: &str,
+    codex_enable_search: bool,
+    codex_command: &str,
+    use_new_window: bool,
+) -> Result<String, String> {
+    // Build Codex command options
+    let mut options = Vec::new();
+
+    // Model option
+    if !codex_model.is_empty() {
+        options.push(format!("--model {}", codex_model));
+    }
+
+    // Approval mode option
+    match codex_approval_mode {
+        "auto" => options.push("--approval-mode auto-edit".to_string()),
+        "full-auto" => options.push("--full-auto".to_string()),
+        _ => {} // "suggest" is default, no flag needed
+    }
+
+    // Search option
+    if codex_enable_search {
+        options.push("--search".to_string());
+    }
+
+    let options_str = options.join(" ");
+
+    let applescript = if use_new_window {
+        format!(
+            r#"
+property targetDirectory : "{}"
+property codexOptions : "{}"
+property codexCommand : "{}"
+
+tell application "iTerm"
+    activate
+
+    -- 新規ウィンドウを作成
+    create window with default profile
+
+    tell current session of current window
+        -- ディレクトリに移動
+        write text "cd " & targetDirectory
+
+        -- Codex を実行
+        write text "codex " & codexOptions & " \"" & codexCommand & "\""
+    end tell
+end tell
+            "#,
+            target_directory, options_str, codex_command
+        )
+    } else {
+        format!(
+            r#"
+property codexCommand : "{}"
+
+tell application "iTerm"
+    activate
+
+    -- 現在のウィンドウの現在のセッションに命令を送信
+    if (count of windows) > 0 then
+        tell current window
+            tell current session
+                -- 命令のみを送信（Codexが既に実行されていることを前提）
+                write text codexCommand
+                -- Enterキーを送信
+                write text ""
+            end tell
+        end tell
+    else
+        error "iTermウィンドウが開いていません"
+    end if
+end tell
+            "#,
+            codex_command
+        )
+    };
+
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(&applescript)
+        .output();
+
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                Ok("AppleScript実行完了".to_string())
+            } else {
+                Err(format!(
+                    "AppleScriptエラー: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ))
+            }
+        }
+        Err(e) => Err(format!("実行エラー: {}", e)),
+    }
+}
+
+#[tauri::command]
 fn stop_execution(state: State<'_, AppState>) -> Result<String, String> {
     let mut is_running = state.is_running.lock().unwrap();
     let mut cancel_flag = state.cancel_flag.lock().unwrap();
@@ -664,6 +1173,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             execute_claude_command,
+            execute_codex_command,
             stop_execution,
             check_iterm_status
         ])
