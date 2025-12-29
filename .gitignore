@@ -26,6 +26,8 @@ dist-ssr
 # Miyabi
 .miyabi.yml
 .worktrees/
+.ai/
+.env
 logs/
 reports/
 *.log
