@@ -1,7 +1,7 @@
 {
   "name": "tauri-cli-scheduler",
   "private": true,
-  "version": "25.7.4",
+  "version": "25.12.30",
   "type": "module",
   "scripts": {
     "dev": "vite",
