@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    tauri_claude_code_runner_lib::run()
+    tauri_cli_scheduler_lib::run()
 }
