@@ -30,14 +30,6 @@ export function CommonSettings({
   onAutoRetryOnRateLimitChange,
   onCheckITermStatus,
 }: CommonSettingsProps) {
-  function setCurrentTimePlusOneMinute() {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() + 1);
-    const hours = String(now.getHours()).padStart(2, "0");
-    const minutes = String(now.getMinutes()).padStart(2, "0");
-    onExecutionTimeChange(`${hours}:${minutes}`);
-  }
-
   function setNextHour01() {
     const [currentHours] = executionTime.split(":").map(Number);
     const nextHour = (currentHours + 1) % 24;
@@ -77,14 +69,6 @@ export function CommonSettings({
             className="w-32 px-4 py-3 text-base font-medium bg-gray-50 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 focus:border-blue-500 transition-colors duration-200 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isRunning}
           />
-          <button
-            type="button"
-            onClick={setCurrentTimePlusOneMinute}
-            className="px-6 py-3 font-medium text-white bg-gradient-to-r from-emerald-500 to-green-600 rounded-2xl shadow-lg hover:shadow-xl hover:from-emerald-600 hover:to-green-700 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-green-300 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={isRunning}
-          >
-            現在時刻+1分
-          </button>
           <button
             type="button"
             onClick={setNextHour01}

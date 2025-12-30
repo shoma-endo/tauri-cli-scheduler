@@ -41,13 +41,6 @@ function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // 実行時刻は常に現在時刻+1分
-        if (parsed.claude) {
-          parsed.claude.executionTime = defaultTime;
-        }
-        if (parsed.codex) {
-          parsed.codex.executionTime = defaultTime;
-        }
         // 新しいプロパティのデフォルト値
         if (!parsed.activeTab) {
           parsed.activeTab = "claude";
