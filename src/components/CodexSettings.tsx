@@ -31,10 +31,8 @@ export function CodexSettings({
               className="w-full px-4 py-3 text-sm bg-gray-50 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 focus:border-blue-500 transition-colors duration-200 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isRunning}
             >
-              <option value="codex-mini-latest">codex-mini-latest</option>
-              <option value="gpt-5-codex">gpt-5-codex</option>
-              <option value="gpt-5">gpt-5</option>
-              <option value="o3">o3</option>
+              <option value="gpt-5.2-codex">gpt-5.2-codex</option>
+              <option value="gpt-5.2">gpt-5.2</option>
             </select>
           </div>
 

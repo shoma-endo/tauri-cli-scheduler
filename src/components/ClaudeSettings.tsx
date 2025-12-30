@@ -15,21 +15,24 @@ export function ClaudeSettings({
 }: ClaudeSettingsProps) {
   return (
     <div className="space-y-6">
-      {/* Claudeコマンドのオプション（新規ウィンドウモードのみ） */}
+      {/* Claude固有設定（新規ウィンドウモードのみ） */}
       {useNewITermWindow && (
         <div>
           <label className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
-            Claudeコマンドのオプション
+            モデル
           </label>
-          <input
-            type="text"
-            value={settings.options}
+          <select
+            value={settings.model}
             onChange={(e) =>
-              onSettingsChange({ ...settings, options: e.target.value })
+              onSettingsChange({ ...settings, model: e.target.value })
             }
             className="w-full px-4 py-3 text-sm bg-gray-50 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 focus:border-blue-500 transition-colors duration-200 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isRunning}
-          />
+          >
+            <option value="opus-4.5">opus 4.5</option>
+            <option value="sonnet-4.5">sonnet 4.5</option>
+            <option value="haiku-4.5">haiku 4.5</option>
+          </select>
         </div>
       )}
 

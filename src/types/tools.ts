@@ -12,7 +12,7 @@ export interface BaseToolSettings {
 
 // Claude固有設定
 export interface ClaudeToolSettings extends BaseToolSettings {
-  options: string; // "--model opus" など
+  model: string; // "opus", "sonnet", "haiku"
 }
 
 // Codex固有設定
@@ -51,7 +51,7 @@ export const DEFAULT_CLAUDE_SETTINGS: ClaudeToolSettings = {
   executionTime: "",
   targetDirectory: "",
   command: "",
-  options: "--model opus",
+  model: "opus-4.5",
   autoRetryOnRateLimit: false,
   useNewITermWindow: true,
 };
@@ -60,7 +60,7 @@ export const DEFAULT_CODEX_SETTINGS: CodexToolSettings = {
   executionTime: "",
   targetDirectory: "",
   command: "",
-  model: "codex-mini-latest",
+  model: "gpt-5.2-codex",
   approvalMode: "suggest",
   enableSearch: false,
   autoRetryOnRateLimit: false,

@@ -58,6 +58,47 @@ function App() {
         if (!parsed.codex) {
           parsed.codex = { ...DEFAULT_CODEX_SETTINGS, executionTime: defaultTime };
         }
+        // 古いCodexモデル名を新しいものにマイグレーション
+        if (parsed.codex && parsed.codex.model) {
+          const oldModels = ["codex-mini-latest", "gpt-5-codex", "gpt-5", "o3"];
+          if (oldModels.includes(parsed.codex.model)) {
+            parsed.codex.model = "gpt-5.2-codex";
+          }
+        }
+        // 古いClaude Code設定（options）を新しい設定（model）にマイグレーション
+        if (parsed.claude && (parsed.claude as any).options) {
+          const optionsStr = (parsed.claude as any).options as string;
+          // "--model opus" から "opus" を抽出
+          const modelMatch = optionsStr.match(/--model\s+(\w+)/);
+          if (modelMatch) {
+            const oldModel = modelMatch[1];
+            // 古いモデル名を新しい形式に変換
+            if (oldModel === "opus") {
+              parsed.claude.model = "opus-4.5";
+            } else if (oldModel === "sonnet") {
+              parsed.claude.model = "sonnet-4.5";
+            } else if (oldModel === "haiku") {
+              parsed.claude.model = "haiku-4.5";
+            } else {
+              parsed.claude.model = "opus-4.5"; // デフォルト
+            }
+          } else {
+            parsed.claude.model = "opus-4.5"; // デフォルト
+          }
+          delete (parsed.claude as any).options;
+        }
+        // 古いClaude Codeモデル名を新しいものにマイグレーション
+        if (parsed.claude && parsed.claude.model) {
+          const modelMap: { [key: string]: string } = {
+            "opus": "opus-4.5",
+            "sonnet": "sonnet-4.5",
+            "haiku": "haiku-4.5",
+            "haiku-3.5": "haiku-4.5"
+          };
+          if (modelMap[parsed.claude.model]) {
+            parsed.claude.model = modelMap[parsed.claude.model];
+          }
+        }
         return parsed;
       } catch (error) {
         console.warn("Failed to parse saved settings, using defaults.", error);
@@ -333,7 +374,7 @@ function App() {
         result = await invoke<ExecutionResult>("execute_claude_command", {
           executionTime: claudeSettings.executionTime,
           targetDirectory: claudeSettings.targetDirectory,
-          claudeOptions: claudeSettings.options,
+          claudeOptions: `--model ${claudeSettings.model}`,
           claudeCommand: claudeSettings.command,
           autoRetryOnRateLimit: claudeSettings.autoRetryOnRateLimit,
           useNewWindow: claudeSettings.useNewITermWindow,
