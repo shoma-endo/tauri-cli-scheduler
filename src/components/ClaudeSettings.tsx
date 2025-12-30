@@ -33,6 +33,29 @@ export function ClaudeSettings({
             <option value="sonnet-4.5">sonnet 4.5</option>
             <option value="haiku-4.5">haiku 4.5</option>
           </select>
+
+          <div className="mt-4">
+            <label className="flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.dangerouslySkipPermissions}
+                onChange={(e) =>
+                  onSettingsChange({
+                    ...settings,
+                    dangerouslySkipPermissions: e.target.checked,
+                  })
+                }
+                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                disabled={isRunning}
+              />
+              <span className="ml-2 text-sm font-medium text-gray-900 dark:text-white">
+                権限確認をスキップ（危険）
+              </span>
+            </label>
+            <p className="ml-6 text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Claude Codeの権限確認を省略します（安全性に注意）
+            </p>
+          </div>
         </div>
       )}
 

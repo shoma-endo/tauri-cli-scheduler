@@ -13,6 +13,7 @@ export interface BaseToolSettings {
 // Claude固有設定
 export interface ClaudeToolSettings extends BaseToolSettings {
   model: string; // "opus", "sonnet", "haiku"
+  dangerouslySkipPermissions: boolean;
 }
 
 // Codex固有設定
@@ -52,6 +53,7 @@ export const DEFAULT_CLAUDE_SETTINGS: ClaudeToolSettings = {
   targetDirectory: "",
   command: "",
   model: "opus-4.5",
+  dangerouslySkipPermissions: false,
   autoRetryOnRateLimit: false,
   useNewITermWindow: true,
 };

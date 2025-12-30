@@ -63,7 +63,7 @@ export function CodexSettings({
                     Suggest (推奨)
                   </label>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    すべての変更を確認してから適用
+                    workspace内の編集は許可、重要操作は承認を要求
                   </p>
                 </div>
               </div>
@@ -88,7 +88,7 @@ export function CodexSettings({
                     Auto
                   </label>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    安全な変更は自動適用、リスクのある変更は確認
+                    未信頼の操作のみ承認を要求
                   </p>
                 </div>
               </div>
@@ -113,7 +113,7 @@ export function CodexSettings({
                     Full Auto
                   </label>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    すべての変更を自動適用（注意して使用）
+                    失敗時のみ承認を要求（注意して使用）
                   </p>
                 </div>
               </div>

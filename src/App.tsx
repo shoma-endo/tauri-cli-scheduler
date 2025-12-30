@@ -53,10 +53,22 @@ function App() {
           parsed.activeTab = "claude";
         }
         if (!parsed.claude) {
-          parsed.claude = { ...DEFAULT_CLAUDE_SETTINGS, executionTime: defaultTime };
+          parsed.claude = {
+            ...DEFAULT_CLAUDE_SETTINGS,
+            executionTime: defaultTime,
+          };
         }
         if (!parsed.codex) {
-          parsed.codex = { ...DEFAULT_CODEX_SETTINGS, executionTime: defaultTime };
+          parsed.codex = {
+            ...DEFAULT_CODEX_SETTINGS,
+            executionTime: defaultTime,
+          };
+        }
+        if (
+          parsed.claude &&
+          typeof parsed.claude.dangerouslySkipPermissions !== "boolean"
+        ) {
+          parsed.claude.dangerouslySkipPermissions = false;
         }
         // 古いCodexモデル名を新しいものにマイグレーション
         if (parsed.codex && parsed.codex.model) {
@@ -90,10 +102,10 @@ function App() {
         // 古いClaude Codeモデル名を新しいものにマイグレーション
         if (parsed.claude && parsed.claude.model) {
           const modelMap: { [key: string]: string } = {
-            "opus": "opus-4.5",
-            "sonnet": "sonnet-4.5",
-            "haiku": "haiku-4.5",
-            "haiku-3.5": "haiku-4.5"
+            opus: "opus-4.5",
+            sonnet: "sonnet-4.5",
+            haiku: "haiku-4.5",
+            "haiku-3.5": "haiku-4.5",
           };
           if (modelMap[parsed.claude.model]) {
             parsed.claude.model = modelMap[parsed.claude.model];
@@ -116,16 +128,19 @@ function App() {
   const [status, setStatus] = useState<string>("");
   const [toolStatus, setToolStatus] = useState<string>("");
   const [executionPhase, setExecutionPhase] = useState<ExecutionPhase>(null);
-  const [executionStartTime, setExecutionStartTime] = useState<number | null>(null);
-  const [checkingStartTime, setCheckingStartTime] = useState<number | null>(null);
+  const [executionStartTime, setExecutionStartTime] = useState<number | null>(
+    null,
+  );
+  const [checkingStartTime, setCheckingStartTime] = useState<number | null>(
+    null,
+  );
   const [iTermStatus, setITermStatus] = useState<ITermStatus | null>(null);
   const [checkingITerm, setCheckingITerm] = useState(false);
   const [rescheduledTime, setRescheduledTime] = useState<string | null>(null);
 
   // 現在のタブの設定を取得
-  const currentSettings = appSettings.activeTab === "claude"
-    ? appSettings.claude
-    : appSettings.codex;
+  const currentSettings =
+    appSettings.activeTab === "claude" ? appSettings.claude : appSettings.codex;
 
   // 設定をlocalStorageに保存
   useEffect(() => {
@@ -139,7 +154,7 @@ function App() {
       setStatus(
         currentSettings.autoRetryOnRateLimit
           ? `${appSettings.activeTab === "claude" ? "Claude Code" : "Codex"} 実行中 - Rate limit監視中...`
-          : `${appSettings.activeTab === "claude" ? "Claude Code" : "Codex"} 動作ステータス取得待機中`
+          : `${appSettings.activeTab === "claude" ? "Claude Code" : "Codex"} 動作ステータス取得待機中`,
       );
       setCheckingStartTime(new Date().getTime());
     });
@@ -167,17 +182,19 @@ function App() {
 
           if (hours > 0) {
             setStatus(
-              `Rate limit検出 - ${scheduledTime}に再実行予定 (残り約${hours}時間${minutes}分)`
+              `Rate limit検出 - ${scheduledTime}に再実行予定 (残り約${hours}時間${minutes}分)`,
             );
           } else {
             setStatus(
-              `Rate limit検出 - ${scheduledTime}に再実行予定 (残り約${minutes}分)`
+              `Rate limit検出 - ${scheduledTime}に再実行予定 (残り約${minutes}分)`,
             );
           }
         }
-      } else if (event.payload.includes("Claude usage limit reached") ||
-                 event.payload.includes("rate limit") ||
-                 event.payload.includes("Rate limit")) {
+      } else if (
+        event.payload.includes("Claude usage limit reached") ||
+        event.payload.includes("rate limit") ||
+        event.payload.includes("Rate limit")
+      ) {
         const resetMatch = event.payload.match(/reset at (\d+(?:am|pm))/i);
         const resetTime = resetMatch ? resetMatch[1] : "指定時刻";
 
@@ -189,11 +206,11 @@ function App() {
 
           if (hours > 0) {
             setStatus(
-              `Rate limit検出 - ${resetTime}まで待機中 (残り約${hours}時間${minutes}分)`
+              `Rate limit検出 - ${resetTime}まで待機中 (残り約${hours}時間${minutes}分)`,
             );
           } else {
             setStatus(
-              `Rate limit検出 - ${resetTime}まで待機中 (残り約${minutes}分)`
+              `Rate limit検出 - ${resetTime}まで待機中 (残り約${minutes}分)`,
             );
           }
         } else {
@@ -242,16 +259,16 @@ function App() {
 
             const distance = target.getTime() - now.getTime();
             const countdownHours = Math.floor(
-              (distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)
+              (distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
             );
             const countdownMinutes = Math.floor(
-              (distance % (1000 * 60 * 60)) / (1000 * 60)
+              (distance % (1000 * 60 * 60)) / (1000 * 60),
             );
             const countdownSeconds = Math.floor(
-              (distance % (1000 * 60)) / 1000
+              (distance % (1000 * 60)) / 1000,
             );
             setCountdown(
-              `${countdownHours}時間 ${countdownMinutes}分 ${countdownSeconds}秒`
+              `${countdownHours}時間 ${countdownMinutes}分 ${countdownSeconds}秒`,
             );
           } else if (
             toolStatus.includes("Claude usage limit reached") ||
@@ -276,7 +293,7 @@ function App() {
             }
           } else {
             const elapsedSeconds = Math.floor(
-              (now.getTime() - (checkingStartTime || now.getTime())) / 1000
+              (now.getTime() - (checkingStartTime || now.getTime())) / 1000,
             );
             const currentCycleSeconds = elapsedSeconds % 60;
             const remainingSeconds = 60 - currentCycleSeconds;
@@ -290,7 +307,7 @@ function App() {
           }
 
           const elapsedSeconds = Math.floor(
-            (now.getTime() - checkingStartTime) / 1000
+            (now.getTime() - checkingStartTime) / 1000,
           );
           const remainingSeconds = Math.max(0, 120 - elapsedSeconds);
 
@@ -304,7 +321,9 @@ function App() {
           setCountdown(`${minutes}分 ${seconds}秒`);
         }
       } else if (executionPhase === "waiting" && isRunning) {
-        const [hours, minutes] = currentSettings.executionTime.split(":").map(Number);
+        const [hours, minutes] = currentSettings.executionTime
+          .split(":")
+          .map(Number);
         const target = new Date();
         target.setHours(hours, minutes, 0, 0);
 
@@ -319,10 +338,10 @@ function App() {
           setExecutionStartTime(now.getTime());
         } else {
           const hours = Math.floor(
-            (distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)
+            (distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
           );
           const minutes = Math.floor(
-            (distance % (1000 * 60 * 60)) / (1000 * 60)
+            (distance % (1000 * 60 * 60)) / (1000 * 60),
           );
           const seconds = Math.floor((distance % (1000 * 60)) / 1000);
           setCountdown(`${hours}時間 ${minutes}分 ${seconds}秒`);
@@ -349,11 +368,16 @@ function App() {
     }
 
     if (!currentSettings.command.trim()) {
-      setStatus(`エラー: ${appSettings.activeTab === "claude" ? "Claude Code" : "Codex"}で実行する命令を入力してください`);
+      setStatus(
+        `エラー: ${appSettings.activeTab === "claude" ? "Claude Code" : "Codex"}で実行する命令を入力してください`,
+      );
       return;
     }
 
-    if (currentSettings.useNewITermWindow && !currentSettings.targetDirectory.trim()) {
+    if (
+      currentSettings.useNewITermWindow &&
+      !currentSettings.targetDirectory.trim()
+    ) {
       setStatus("エラー: 実行対象ディレクトリを選択してください");
       return;
     }
@@ -371,10 +395,17 @@ function App() {
 
       if (appSettings.activeTab === "claude") {
         const claudeSettings = appSettings.claude;
+        const claudeOptions: string[] = [];
+        if (claudeSettings.model) {
+          claudeOptions.push(`--model ${claudeSettings.model}`);
+        }
+        if (claudeSettings.dangerouslySkipPermissions) {
+          claudeOptions.push("--dangerously-skip-permissions");
+        }
         result = await invoke<ExecutionResult>("execute_claude_command", {
           executionTime: claudeSettings.executionTime,
           targetDirectory: claudeSettings.targetDirectory,
-          claudeOptions: `--model ${claudeSettings.model}`,
+          claudeOptions: claudeOptions.join(" "),
           claudeCommand: claudeSettings.command,
           autoRetryOnRateLimit: claudeSettings.autoRetryOnRateLimit,
           useNewWindow: claudeSettings.useNewITermWindow,

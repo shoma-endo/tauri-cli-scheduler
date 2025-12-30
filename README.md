@@ -97,15 +97,16 @@ npm run tauri:build
 ### ツール別設定
 
 #### Claude Code
-- **オプション**: Claude Codeのコマンドラインオプション（デフォルト: `--model opus`）
+- **モデル**: 使用するモデルを選択
+- **権限確認をスキップ**: `--dangerously-skip-permissions` を付与（危険）
 - **コマンド**: Claudeに実行させたい命令
 
 #### Codex
-- **モデル**: 使用するモデルを選択（codex-mini-latest, gpt-5-codex, gpt-5, o3）
+- **モデル**: 使用するモデルを選択（gpt-5.2-codex, gpt-5.2）
 - **承認モード**:
-  - `Suggest`: すべての変更を確認してから適用（推奨）
-  - `Auto`: 安全な変更は自動適用、リスクのある変更は確認
-  - `Full Auto`: すべての変更を自動適用
+  - `Suggest`: workspace内の編集は許可、重要操作は承認を要求
+  - `Auto`: 未信頼の操作のみ承認を要求
+  - `Full Auto`: 失敗時のみ承認を要求（注意して使用）
 - **Web検索**: インターネット検索を使用してコンテキストを収集
 - **コマンド**: Codexに実行させたい命令
 
@@ -138,6 +139,20 @@ npm run tauri:build
 
 実行中、アプリは以下を表示：
 - 実行時刻までのカウントダウンタイマー
+
+## ビルド（DMG）
+
+見た目を整えたDMGは、以下のコマンドで作成できます。
+
+```
+npm run tauri:build
+```
+
+生成物:
+- `src-tauri/target/release/bundle/dmg/Tauri CLI Scheduler_25.12.30_aarch64.dmg`
+
+補足:
+- DMGは既存ファイルがあっても上書きされます。
 - リアルタイムのターミナル出力（最後の20行）
 - 処理ステータスと完了時間
 - Rate Limit検出と待機時間
@@ -192,12 +207,13 @@ npm run tauri dev
 ### デフォルト設定
 
 #### Claude Code
-- **オプション**: `--model opus`
+- **モデル**: `opus-4.5`
+- **権限確認をスキップ**: 無効
 - **実行モード**: 新規iTermウィンドウ
 - **自動リトライ**: 無効
 
 #### Codex
-- **モデル**: `codex-mini-latest`
+- **モデル**: `gpt-5.2-codex`
 - **承認モード**: `Suggest`
 - **Web検索**: 無効
 - **実行モード**: 新規iTermウィンドウ
@@ -208,7 +224,7 @@ npm run tauri dev
 以下の設定はlocalStorageに保存されます（ツールごとに独立）：
 - 選択中のツール（Claude Code / Codex）
 - ターゲットディレクトリ
-- ツール固有オプション
+- ツール固有設定
 - 最後のコマンド
 - 自動リトライの設定
 - ウィンドウモードの設定

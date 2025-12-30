@@ -539,7 +539,7 @@ tell application "iTerm"
         write text "cd " & quoted form of targetDirectory
 
         -- Claude Code を実行
-        write text "claude --dangerously-skip-permissions " & claudeOptions & " " & quoted form of claudeCommand
+        write text "claude " & claudeOptions & " " & quoted form of claudeCommand
     end tell
 end tell
             "#,
@@ -839,13 +839,11 @@ async fn execute_codex_applescript(
                 println!("Codex session inactive (count: {})", inactive_count);
 
                 if inactive_count == 1 {
-                    first_inactive_time =
-                        Some(std::time::Instant::now() - Duration::from_secs(60));
+                    first_inactive_time = Some(std::time::Instant::now() - Duration::from_secs(60));
                 }
 
                 if inactive_count >= 3 && !has_rate_limit {
-                    let completion_time =
-                        first_inactive_time.unwrap_or(std::time::Instant::now());
+                    let completion_time = first_inactive_time.unwrap_or(std::time::Instant::now());
                     let elapsed = completion_time.duration_since(start_time);
                     let minutes = elapsed.as_secs() / 60;
                     let seconds = elapsed.as_secs() % 60;
@@ -1006,13 +1004,11 @@ async fn execute_codex_applescript(
                 println!("Codex session inactive (count: {})", inactive_count);
 
                 if inactive_count == 1 {
-                    first_inactive_time =
-                        Some(std::time::Instant::now() - Duration::from_secs(60));
+                    first_inactive_time = Some(std::time::Instant::now() - Duration::from_secs(60));
                 }
 
                 if inactive_count >= 3 && !has_rate_limit {
-                    let completion_time =
-                        first_inactive_time.unwrap_or(std::time::Instant::now());
+                    let completion_time = first_inactive_time.unwrap_or(std::time::Instant::now());
                     let elapsed = completion_time.duration_since(start_time);
                     let minutes = elapsed.as_secs() / 60;
                     let seconds = elapsed.as_secs() % 60;
@@ -1082,9 +1078,15 @@ async fn execute_codex_applescript_internal(
 
     // Approval mode option
     match codex_approval_mode {
-        "auto" => options.push("--approval-mode auto-edit".to_string()),
+        "auto" => {
+            options.push("--sandbox workspace-write".to_string());
+            options.push("--ask-for-approval untrusted".to_string());
+        }
         "full-auto" => options.push("--full-auto".to_string()),
-        _ => {} // "suggest" is default, no flag needed
+        _ => {
+            options.push("--sandbox workspace-write".to_string());
+            options.push("--ask-for-approval on-request".to_string());
+        }
     }
 
     // Search option
