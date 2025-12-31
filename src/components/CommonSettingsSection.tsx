@@ -93,7 +93,20 @@ export function CommonSettingsSection({
               onClick={setNextHour01}
               disabled={isRunning}
             >
-              Next{" "}
+              <svg
+                className="w-4 h-4 mr-2"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              Set to{" "}
               {String((parseInt(executionTime.split(":")[0]) + 1) % 24).padStart(
                 2,
                 "0",
