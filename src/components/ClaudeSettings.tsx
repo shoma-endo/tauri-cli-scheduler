@@ -29,9 +29,9 @@ export function ClaudeSettings({
             className="w-full px-4 py-3 text-sm bg-gray-50 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 focus:border-blue-500 transition-colors duration-200 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isRunning}
           >
-            <option value="opus-4.5">opus 4.5</option>
-            <option value="sonnet-4.5">sonnet 4.5</option>
-            <option value="haiku-4.5">haiku 4.5</option>
+            <option value="claude-opus-4-5-20251101">Opus 4.5</option>
+            <option value="claude-sonnet-4-5-20250929">Sonnet 4.5</option>
+            <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
           </select>
 
           <div className="mt-4">

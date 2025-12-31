@@ -52,7 +52,7 @@ export const DEFAULT_CLAUDE_SETTINGS: ClaudeToolSettings = {
   executionTime: "",
   targetDirectory: "",
   command: "",
-  model: "opus-4.5",
+  model: "claude-opus-4-5-20251101",
   dangerouslySkipPermissions: false,
   autoRetryOnRateLimit: false,
   useNewITermWindow: true,

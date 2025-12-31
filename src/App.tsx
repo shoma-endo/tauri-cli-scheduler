@@ -79,26 +79,29 @@ function App() {
             const oldModel = modelMatch[1];
             // 古いモデル名を新しい形式に変換
             if (oldModel === "opus") {
-              parsed.claude.model = "opus-4.5";
+              parsed.claude.model = "claude-opus-4-5-20251101";
             } else if (oldModel === "sonnet") {
-              parsed.claude.model = "sonnet-4.5";
+              parsed.claude.model = "claude-sonnet-4-5-20250929";
             } else if (oldModel === "haiku") {
-              parsed.claude.model = "haiku-4.5";
+              parsed.claude.model = "claude-haiku-4-5-20251001";
             } else {
-              parsed.claude.model = "opus-4.5"; // デフォルト
+              parsed.claude.model = "claude-opus-4-5-20251101"; // デフォルト
             }
           } else {
-            parsed.claude.model = "opus-4.5"; // デフォルト
+            parsed.claude.model = "claude-opus-4-5-20251101"; // デフォルト
           }
           delete (parsed.claude as any).options;
         }
         // 古いClaude Codeモデル名を新しいものにマイグレーション
         if (parsed.claude && parsed.claude.model) {
           const modelMap: { [key: string]: string } = {
-            opus: "opus-4.5",
-            sonnet: "sonnet-4.5",
-            haiku: "haiku-4.5",
-            "haiku-3.5": "haiku-4.5",
+            opus: "claude-opus-4-5-20251101",
+            sonnet: "claude-sonnet-4-5-20250929",
+            haiku: "claude-haiku-4-5-20251001",
+            "haiku-3.5": "claude-haiku-4-5-20251001",
+            "opus-4.5": "claude-opus-4-5-20251101",
+            "sonnet-4.5": "claude-sonnet-4-5-20250929",
+            "haiku-4.5": "claude-haiku-4-5-20251001",
           };
           if (modelMap[parsed.claude.model]) {
             parsed.claude.model = modelMap[parsed.claude.model];
