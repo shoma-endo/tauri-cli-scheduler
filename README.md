@@ -13,6 +13,10 @@ macOS上でiTermを通じて、指定した時刻にClaude CodeまたはCodex CL
 - 💾 **設定の永続化**: 各ツールの設定を保存して次回も利用可能
 - 🖥️ **iTerm統合**: iTermとのシームレスな統合
 - 🎯 **ウィンドウ管理**: 新規ウィンドウまたは既存セッションでの実行を選択可能
+- 📐 **セクションベースUI**: カード形式で設定と実行を視覚的に分離
+- 🎨 **2列レイアウト**: 設定パネル（左）と実行パネル（右）で直感的に操作
+- 🌓 **ダークモード対応**: 完全なダークモードサポート
+- 📱 **レスポンシブ設計**: モバイル～デスクトップで最適な表示
 - 🔧 **拡張可能な設計**: 将来の新しいCLIツール追加に対応
 
 ![Tauri CLI Scheduler](https://storage.googleapis.com/zenn-user-upload/84e3d8897c85-20250623.png)
@@ -85,15 +89,33 @@ npm run tauri:build
 
 ## 使い方
 
+### UI レイアウト
+
+アプリケーションは2列レイアウトで構成：
+- **左列（設定パネル）**: 各種設定をカード形式で表示
+  - 基本設定（実行時刻、ディレクトリ、オプション）
+  - スケジュール管理（Launchd登録/削除）
+  - ツール固有設定（モデル選択、承認モード等）
+- **右列（実行パネル）**: 実行制御と監視
+  - 開始/停止ボタン
+  - カウントダウンタイマー
+  - ステータスメッセージ
+  - ターミナル出力表示
+
 ### 基本的な使用方法
 
 1. **アプリケーションを起動**
 2. **ツールを選択**: タブで「Claude Code」「Codex」「Gemini CLI」を選択
-3. **実行時刻を設定**: コマンドを実行する時刻を選択
-4. **ディレクトリを選択**: コマンドを実行する作業ディレクトリを選択
-5. **ツール固有の設定**: 各ツールのオプションを設定
+3. **基本設定を行う**（左列）:
+   - 実行時刻を設定
+   - コマンドを実行するディレクトリを選択
+   - 自動リトライ等のオプションを設定
+4. **スケジュール管理**（左列）:
+   - Launchdに登録して、Macがスリープ状態でも定期実行
+   - または、一度だけ手動実行
+5. **ツール固有の設定**（左列）: 各ツールのオプションを設定
 6. **コマンドを入力**: 実行させたいコマンドを入力
-7. **「開始」をクリック**: アプリは指定時刻まで待機して実行
+7. **「開始」をクリック**（右列）: アプリは指定時刻まで待機して実行
 
 ### ツール別設定
 
@@ -155,12 +177,20 @@ npm run tauri:build
 
 見た目を整えたDMGは、以下のコマンドで作成できます。
 
-```
+```bash
 npm run tauri:build
 ```
 
+または、バージョンを自動更新してビルド:
+
+```bash
+npm run pretauri:build
+```
+
 生成物:
-- `src-tauri/target/release/bundle/dmg/Tauri CLI Scheduler_25.12.30_aarch64.dmg`
+- `src-tauri/target/release/bundle/dmg/Tauri CLI Scheduler_25.12.31_aarch64.dmg`
+
+**注**: バージョンはYY.M.D形式で自動更新されます（例：2025年12月31日 → 25.12.31）
 
 補足:
 - DMGは既存ファイルがあっても上書きされます。
@@ -195,22 +225,36 @@ npm run tauri dev
 
 ```
 ├── src/                    # フロントエンド（React + TypeScript）
-│   ├── App.tsx            # メインアプリケーションコンポーネント
+│   ├── App.tsx            # メインアプリケーション（2列グリッドレイアウト）
 │   ├── components/        # UIコンポーネント
-│   │   ├── Header.tsx         # ヘッダー（バージョン表示）
-│   │   ├── TabSelector.tsx    # ツール切り替えタブ
-│   │   ├── CommonSettings.tsx # 共通設定（時刻、ディレクトリ等）
-│   │   ├── ExecutionPanel.tsx # 実行パネル（ボタン、出力表示）
-│   │   ├── ClaudeSettings.tsx # Claude Code固有設定
-│   │   └── CodexSettings.tsx  # Codex固有設定
+│   │   ├── Header.tsx             # ヘッダー（バージョン表示）
+│   │   ├── TabSelector.tsx        # ツール切り替えタブ
+│   │   ├── SettingsPanel.tsx      # 統合設定パネル（左列コンテナ）
+│   │   ├── CommonSettingsSection.tsx # 基本設定をカード化
+│   │   ├── ToolSettingsSection.tsx   # ツール設定ラッパー
+│   │   ├── SchedulePanel.tsx         # スケジュール管理UI
+│   │   ├── ConditionalSettingsIndicator.tsx # 条件付き設定インジケータ
+│   │   ├── CommonSettings.tsx     # 共通設定（時刻、ディレクトリ等）
+│   │   ├── ExecutionPanel.tsx     # 実行パネル（右列、ボタン、出力表示）
+│   │   ├── ScheduleManager.tsx    # Launchd登録/削除ロジック
+│   │   ├── ClaudeSettings.tsx     # Claude Code固有設定
+│   │   ├── CodexSettings.tsx      # Codex固有設定
+│   │   └── GeminiSettings.tsx     # Gemini CLI固有設定
 │   ├── types/             # 型定義
-│   │   └── tools.ts       # ツール関連の型
+│   │   ├── tools.ts       # ツール関連の型
+│   │   └── schedule.ts    # スケジュール関連の型
 │   └── assets/            # 静的アセット
 ├── src-tauri/             # バックエンド（Rust）
 │   ├── src/
-│   │   └── lib.rs        # Tauriのコアロジック（Claude/Codex両対応）
-│   └── tauri.conf.json   # Tauri設定
-└── CLAUDE.md             # AIアシスタント用の指示
+│   │   ├── lib.rs         # Tauriのコアロジック（CLI実行、スケジュール）
+│   │   └── plist_manager.rs # Launchd plist管理
+│   ├── scripts/           # シェルスクリプト
+│   │   ├── run-claude.sh
+│   │   ├── run-codex.sh
+│   │   └── run-gemini.sh
+│   └── tauri.conf.json    # Tauri設定
+├── CLAUDE.md              # AIアシスタント用の指示
+└── update-version.js      # バージョン自動更新スクリプト
 ```
 
 ## 設定
@@ -248,6 +292,35 @@ npm run tauri dev
 - ウィンドウモードの設定
 
 ## 技術詳細
+
+### UI/UXアーキテクチャ
+
+**2列グリッドレイアウト**:
+- 左列（col-span-2）: SettingsPanel - セクションベースの設定
+  - CommonSettingsSection: 基本設定（時刻、ディレクトリ、iTerm設定）
+  - SchedulePanel: Launchd スケジュール管理
+  - ToolSettingsSection: ツール固有設定（アクティブタブのみ表示）
+- 右列（col-span-1）: ExecutionPanel - 実行制御
+  - 開始/停止ボタン
+  - カウントダウン表示
+  - ステータスメッセージ
+  - ターミナル出力
+
+**レスポンシブ対応**:
+- sm: 1列レイアウト（モバイル）
+- md/lg: 3列グリッド（2:1比率）
+
+### スケジュール管理（Launchd統合）
+
+Launchdを使用してMacネイティブなスケジュール実行を実装：
+- plist生成・管理
+- `~/Library/LaunchAgents/` への登録
+- Mac起動時やスリープ解除時の自動実行
+- Launchd restart による日次スケジュール管理
+
+**UI統合**:
+- SchedulePanel: 登録/削除の状態表示
+- ConditionalSettingsIndicator: 条件付き設定の表示制御
 
 ### Rate Limit検出
 
