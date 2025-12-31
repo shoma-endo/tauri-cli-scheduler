@@ -4,11 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import {
   Header,
   TabSelector,
-  CommonSettings,
+  SettingsPanel,
   ExecutionPanel,
-  ClaudeSettings,
-  CodexSettings,
-  GeminiSettings,
 } from "./components";
 import {
   ToolType,
@@ -24,6 +21,7 @@ import {
   DEFAULT_GEMINI_SETTINGS,
   TOOL_DISPLAY_NAMES,
 } from "./types/tools";
+import { RegisteredSchedule } from "./types/schedule";
 
 function App() {
   function getDefaultTime() {
@@ -161,6 +159,13 @@ function App() {
   const [iTermStatus, setITermStatus] = useState<ITermStatus | null>(null);
   const [checkingITerm, setCheckingITerm] = useState(false);
   const [rescheduledTime, setRescheduledTime] = useState<string | null>(null);
+  const [registeredSchedules, setRegisteredSchedules] = useState<
+    Record<ToolType, RegisteredSchedule | null>
+  >({
+    claude: null,
+    codex: null,
+    gemini: null,
+  });
 
   // 現在のタブの設定を取得
   const currentSettings = (() => {
@@ -547,6 +552,26 @@ function App() {
     checkITermStatus();
   }, []);
 
+  // 起動時に登録済みスケジュールを読み込み
+  useEffect(() => {
+    const loadSchedules = async () => {
+      try {
+        const schedules = await invoke<RegisteredSchedule[]>(
+          "get_registered_schedules"
+        );
+        const map: Record<ToolType, RegisteredSchedule | null> = {
+          claude: schedules.find((s) => s.tool === "claude") || null,
+          codex: schedules.find((s) => s.tool === "codex") || null,
+          gemini: schedules.find((s) => s.tool === "gemini") || null,
+        };
+        setRegisteredSchedules(map);
+      } catch (error) {
+        console.error("Failed to load registered schedules:", error);
+      }
+    };
+    loadSchedules();
+  }, []);
+
   // タブ変更ハンドラー
   function handleTabChange(tab: ToolType) {
     setAppSettings({ ...appSettings, activeTab: tab });
@@ -655,6 +680,35 @@ function App() {
     });
   }
 
+  function handleScheduleRegister(success: boolean) {
+    if (success) {
+      // Update local state
+      const updated = { ...registeredSchedules };
+      const schedule: RegisteredSchedule = {
+        tool: appSettings.activeTab,
+        execution_time: currentSettings.executionTime,
+        created_at: new Date().toISOString(),
+      };
+      updated[appSettings.activeTab] = schedule;
+      setRegisteredSchedules(updated);
+      setStatus("スケジュール登録成功: Launchdに登録しました");
+    } else {
+      setStatus("スケジュール登録失敗");
+    }
+  }
+
+  function handleScheduleUnregister(success: boolean) {
+    if (success) {
+      // Update local state
+      const updated = { ...registeredSchedules };
+      updated[appSettings.activeTab] = null;
+      setRegisteredSchedules(updated);
+      setStatus("スケジュール削除成功");
+    } else {
+      setStatus("スケジュール削除失敗");
+    }
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       <Header activeTab={appSettings.activeTab} />
@@ -664,56 +718,48 @@ function App() {
           onTabChange={handleTabChange}
           disabled={isRunning}
         />
-        <div className="space-y-6">
-          <CommonSettings
-            executionTime={currentSettings.executionTime}
-            targetDirectory={currentSettings.targetDirectory}
-            useNewITermWindow={currentSettings.useNewITermWindow}
-            autoRetryOnRateLimit={currentSettings.autoRetryOnRateLimit}
-            iTermStatus={iTermStatus}
-            checkingITerm={checkingITerm}
-            isRunning={isRunning}
-            onExecutionTimeChange={handleExecutionTimeChange}
-            onTargetDirectoryChange={handleTargetDirectoryChange}
-            onUseNewITermWindowChange={handleUseNewITermWindowChange}
-            onAutoRetryOnRateLimitChange={handleAutoRetryOnRateLimitChange}
-            onCheckITermStatus={checkITermStatus}
-          />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* 左列: 設定パネル（約65%） */}
+          <div className="md:col-span-2">
+            <SettingsPanel
+              executionTime={currentSettings.executionTime}
+              targetDirectory={currentSettings.targetDirectory}
+              useNewITermWindow={currentSettings.useNewITermWindow}
+              autoRetryOnRateLimit={currentSettings.autoRetryOnRateLimit}
+              iTermStatus={iTermStatus}
+              checkingITerm={checkingITerm}
+              isRunning={isRunning}
+              onExecutionTimeChange={handleExecutionTimeChange}
+              onTargetDirectoryChange={handleTargetDirectoryChange}
+              onUseNewITermWindowChange={handleUseNewITermWindowChange}
+              onAutoRetryOnRateLimitChange={handleAutoRetryOnRateLimitChange}
+              onCheckITermStatus={checkITermStatus}
+              activeTab={appSettings.activeTab}
+              claudeSettings={appSettings.claude}
+              codexSettings={appSettings.codex}
+              geminiSettings={appSettings.gemini}
+              onClaudeSettingsChange={handleClaudeSettingsChange}
+              onCodexSettingsChange={handleCodexSettingsChange}
+              onGeminiSettingsChange={handleGeminiSettingsChange}
+              registeredSchedule={registeredSchedules[appSettings.activeTab]}
+              onScheduleRegister={handleScheduleRegister}
+              onScheduleUnregister={handleScheduleUnregister}
+            />
+          </div>
 
-          {/* ツール固有の設定 */}
-          {appSettings.activeTab === "claude" ? (
-            <ClaudeSettings
-              settings={appSettings.claude}
+          {/* 右列: 実行パネル（約35%） */}
+          <div className="md:col-span-1">
+            <ExecutionPanel
+              activeTab={appSettings.activeTab}
               isRunning={isRunning}
-              useNewITermWindow={appSettings.claude.useNewITermWindow}
-              onSettingsChange={handleClaudeSettingsChange}
+              countdown={countdown}
+              status={status}
+              toolStatus={toolStatus}
+              iTermStatus={iTermStatus}
+              onStart={startExecution}
+              onStop={stopExecution}
             />
-          ) : appSettings.activeTab === "codex" ? (
-            <CodexSettings
-              settings={appSettings.codex}
-              isRunning={isRunning}
-              useNewITermWindow={appSettings.codex.useNewITermWindow}
-              onSettingsChange={handleCodexSettingsChange}
-            />
-          ) : (
-            <GeminiSettings
-              settings={appSettings.gemini}
-              isRunning={isRunning}
-              useNewITermWindow={appSettings.gemini.useNewITermWindow}
-              onSettingsChange={handleGeminiSettingsChange}
-            />
-          )}
-
-          <ExecutionPanel
-            activeTab={appSettings.activeTab}
-            isRunning={isRunning}
-            countdown={countdown}
-            status={status}
-            toolStatus={toolStatus}
-            iTermStatus={iTermStatus}
-            onStart={startExecution}
-            onStop={stopExecution}
-          />
+          </div>
         </div>
       </div>
     </main>

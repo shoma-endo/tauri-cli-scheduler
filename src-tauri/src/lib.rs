@@ -6,6 +6,9 @@ use std::time::Duration;
 use tauri::{Emitter, State};
 use tokio::time::sleep;
 
+mod plist_manager;
+use plist_manager::{LaunchdConfig, RegisteredSchedule};
+
 struct AppState {
     is_running: Arc<Mutex<bool>>,
     cancel_flag: Arc<Mutex<bool>>,
@@ -34,6 +37,14 @@ struct ExecutionResult {
 struct ITermStatus {
     is_installed: bool,
     is_running: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ScheduleResult {
+    success: bool,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    registered_tool: Option<String>,
 }
 
 #[tauri::command]
@@ -1686,6 +1697,107 @@ fn stop_execution(state: State<'_, AppState>) -> Result<String, String> {
     Ok("実行を停止しました".to_string())
 }
 
+#[tauri::command]
+fn register_schedule(
+    tool: String,
+    execution_time: String,
+    target_directory: String,
+    command_args: String,
+) -> Result<ScheduleResult, String> {
+    // Parse execution time (HH:MM format)
+    let parts: Vec<&str> = execution_time.split(':').collect();
+    if parts.len() != 2 {
+        return Ok(ScheduleResult {
+            success: false,
+            message: "時刻の形式が正しくありません（HH:MM形式で指定してください）".to_string(),
+            registered_tool: None,
+        });
+    }
+
+    let hour: u32 = match parts[0].parse() {
+        Ok(h) if h <= 23 => h,
+        _ => {
+            return Ok(ScheduleResult {
+                success: false,
+                message: "時間は0-23の範囲で指定してください".to_string(),
+                registered_tool: None,
+            });
+        }
+    };
+
+    let minute: u32 = match parts[1].parse() {
+        Ok(m) if m <= 59 => m,
+        _ => {
+            return Ok(ScheduleResult {
+                success: false,
+                message: "分は0-59の範囲で指定してください".to_string(),
+                registered_tool: None,
+            });
+        }
+    };
+
+    // Validate tool
+    if !["claude", "codex", "gemini"].contains(&tool.as_str()) {
+        return Ok(ScheduleResult {
+            success: false,
+            message: "無効なツール指定です".to_string(),
+            registered_tool: None,
+        });
+    }
+
+    // Create LaunchdConfig and generate plist
+    let config = LaunchdConfig {
+        tool: tool.clone(),
+        hour,
+        minute,
+        target_directory,
+        command_args,
+    };
+
+    match plist_manager::create_plist(&config) {
+        Ok(_msg) => Ok(ScheduleResult {
+            success: true,
+            message: format!("スケジュール登録成功: 毎日 {}:{:02}", hour, minute),
+            registered_tool: Some(tool),
+        }),
+        Err(e) => Ok(ScheduleResult {
+            success: false,
+            message: format!("スケジュール登録エラー: {}", e),
+            registered_tool: None,
+        }),
+    }
+}
+
+#[tauri::command]
+fn unregister_schedule(tool: String) -> Result<ScheduleResult, String> {
+    // Validate tool
+    if !["claude", "codex", "gemini"].contains(&tool.as_str()) {
+        return Ok(ScheduleResult {
+            success: false,
+            message: "無効なツール指定です".to_string(),
+            registered_tool: None,
+        });
+    }
+
+    match plist_manager::delete_plist(&tool) {
+        Ok(_msg) => Ok(ScheduleResult {
+            success: true,
+            message: "スケジュール削除成功".to_string(),
+            registered_tool: Some(tool),
+        }),
+        Err(e) => Ok(ScheduleResult {
+            success: false,
+            message: format!("スケジュール削除エラー: {}", e),
+            registered_tool: None,
+        }),
+    }
+}
+
+#[tauri::command]
+fn get_registered_schedules() -> Result<Vec<RegisteredSchedule>, String> {
+    plist_manager::get_registered_schedules()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1700,7 +1812,10 @@ pub fn run() {
             execute_codex_command,
             execute_gemini_command,
             stop_execution,
-            check_iterm_status
+            check_iterm_status,
+            register_schedule,
+            unregister_schedule,
+            get_registered_schedules
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
