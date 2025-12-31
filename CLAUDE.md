@@ -124,7 +124,7 @@ cargo clippy           # Run Rust linter
 - Vite dev server runs on fixed port 1420
 - HMR enabled with automatic host detection
 - Ignores `src-tauri` directory during watch mode
-- Tailwind CSS v4 with both PostCSS and Vite plugins
+- Tailwind CSS v4 with CSS variables for dark mode (auto-detects OS preference)
 
 ### Dependencies
 - **Frontend**: React 18, TypeScript, Tailwind CSS v4, Vite 6
@@ -141,7 +141,7 @@ cargo clippy           # Run Rust linter
 - TypeScript is in strict mode - handle all nullable values properly
 - The default Claude options include `--model opus`
 - UI language is Japanese with appropriate countdown formatting
-- The app uses Tailwind CSS v4 with both PostCSS and Vite plugins
+- The app uses Tailwind CSS v4 with CSS variables for automatic dark mode support
 - React 18 with TypeScript for the frontend
 
 ## Key Files and Their Roles

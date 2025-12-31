@@ -346,10 +346,10 @@ npm run tauri dev
 - `dark:*` 変種: 完全なダークモード対応（53+ トークン参照）
 
 **ダークモード実装**:
-- Tailwind の `darkMode: 'class'` で自動適用
-- `<html class="dark">` で切り替え
-- すべてのセマンティックトークンに dark: 対応版を用意
-- 例: `bg-surface-subtle dark:bg-surface-dark-muted`
+- CSS変数ベースの自動切り替え（`prefers-color-scheme: dark`）
+- OSのダークモード設定に自動追従
+- `:root`でライト/ダーク両方の変数を定義
+- Tailwindカラーが CSS変数を参照（例: `--surface-base`, `--text-primary`）
 
 ### スケジュール管理（Launchd統合）
 
