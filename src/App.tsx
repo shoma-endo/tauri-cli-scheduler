@@ -8,23 +8,22 @@ import {
   ExecutionPanel,
   ClaudeSettings,
   CodexSettings,
+  GeminiSettings,
 } from "./components";
 import {
   ToolType,
   ClaudeToolSettings,
   CodexToolSettings,
+  GeminiToolSettings,
+  AppSettings,
   ExecutionResult,
   ITermStatus,
   ExecutionPhase,
   DEFAULT_CLAUDE_SETTINGS,
   DEFAULT_CODEX_SETTINGS,
+  DEFAULT_GEMINI_SETTINGS,
+  TOOL_DISPLAY_NAMES,
 } from "./types/tools";
-
-interface AppSettings {
-  activeTab: ToolType;
-  claude: ClaudeToolSettings;
-  codex: CodexToolSettings;
-}
 
 function App() {
   function getDefaultTime() {
@@ -41,8 +40,9 @@ function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        const validTabs: ToolType[] = ["claude", "codex", "gemini"];
         // 新しいプロパティのデフォルト値
-        if (!parsed.activeTab) {
+        if (!parsed.activeTab || !validTabs.includes(parsed.activeTab)) {
           parsed.activeTab = "claude";
         }
         if (!parsed.claude) {
@@ -57,11 +57,38 @@ function App() {
             executionTime: defaultTime,
           };
         }
+        if (!parsed.gemini) {
+          parsed.gemini = {
+            ...DEFAULT_GEMINI_SETTINGS,
+            executionTime: defaultTime,
+          };
+        }
         if (
           parsed.claude &&
           typeof parsed.claude.dangerouslySkipPermissions !== "boolean"
         ) {
           parsed.claude.dangerouslySkipPermissions = false;
+        }
+        if (parsed.gemini) {
+          if (typeof parsed.gemini.includeAllFiles !== "boolean") {
+            parsed.gemini.includeAllFiles = false;
+          }
+          if (
+            parsed.gemini.outputFormat !== "text" &&
+            parsed.gemini.outputFormat !== "json"
+          ) {
+            parsed.gemini.outputFormat = "text";
+          }
+          if (typeof parsed.gemini.includeDirectories !== "string") {
+            parsed.gemini.includeDirectories = "";
+          }
+          if (
+            parsed.gemini.approvalMode !== "default" &&
+            parsed.gemini.approvalMode !== "auto_edit" &&
+            parsed.gemini.approvalMode !== "yolo"
+          ) {
+            parsed.gemini.approvalMode = "default";
+          }
         }
         // 古いCodexモデル名を新しいものにマイグレーション
         if (parsed.codex && parsed.codex.model) {
@@ -116,6 +143,7 @@ function App() {
       activeTab: "claude" as ToolType,
       claude: { ...DEFAULT_CLAUDE_SETTINGS, executionTime: defaultTime },
       codex: { ...DEFAULT_CODEX_SETTINGS, executionTime: defaultTime },
+      gemini: { ...DEFAULT_GEMINI_SETTINGS, executionTime: defaultTime },
     };
   });
 
@@ -135,8 +163,20 @@ function App() {
   const [rescheduledTime, setRescheduledTime] = useState<string | null>(null);
 
   // 現在のタブの設定を取得
-  const currentSettings =
-    appSettings.activeTab === "claude" ? appSettings.claude : appSettings.codex;
+  const currentSettings = (() => {
+    switch (appSettings.activeTab) {
+      case "claude":
+        return appSettings.claude;
+      case "codex":
+        return appSettings.codex;
+      case "gemini":
+        return appSettings.gemini;
+      default:
+        return appSettings.claude;
+    }
+  })();
+
+  const activeToolName = TOOL_DISPLAY_NAMES[appSettings.activeTab];
 
   // 設定をlocalStorageに保存
   useEffect(() => {
@@ -149,8 +189,8 @@ function App() {
       setExecutionPhase("checking");
       setStatus(
         currentSettings.autoRetryOnRateLimit
-          ? `${appSettings.activeTab === "claude" ? "Claude Code" : "Codex"} 実行中 - Rate limit監視中...`
-          : `${appSettings.activeTab === "claude" ? "Claude Code" : "Codex"} 動作ステータス取得待機中`,
+          ? `${activeToolName} 実行中 - Rate limit監視中...`
+          : `${activeToolName} 動作ステータス取得待機中`,
       );
       setCheckingStartTime(new Date().getTime());
     });
@@ -188,8 +228,9 @@ function App() {
         }
       } else if (
         event.payload.includes("Claude usage limit reached") ||
-        event.payload.includes("rate limit") ||
-        event.payload.includes("Rate limit")
+        /rate limit/i.test(event.payload) ||
+        event.payload.includes("RESOURCE_EXHAUSTED") ||
+        /quota/i.test(event.payload)
       ) {
         const resetMatch = event.payload.match(/reset at (\d+(?:am|pm))/i);
         const resetTime = resetMatch ? resetMatch[1] : "指定時刻";
@@ -268,7 +309,9 @@ function App() {
             );
           } else if (
             toolStatus.includes("Claude usage limit reached") ||
-            toolStatus.includes("rate limit")
+            /rate limit/i.test(toolStatus) ||
+            toolStatus.includes("RESOURCE_EXHAUSTED") ||
+            /quota/i.test(toolStatus)
           ) {
             const resetMatch = toolStatus.match(/reset at (\d+(?:am|pm))/i);
             const resetTime = resetMatch ? resetMatch[1] : "指定時刻";
@@ -365,7 +408,7 @@ function App() {
 
     if (!currentSettings.command.trim()) {
       setStatus(
-        `エラー: ${appSettings.activeTab === "claude" ? "Claude Code" : "Codex"}で実行する命令を入力してください`,
+        `エラー: ${activeToolName}で実行する命令を入力してください`,
       );
       return;
     }
@@ -406,7 +449,7 @@ function App() {
           autoRetryOnRateLimit: claudeSettings.autoRetryOnRateLimit,
           useNewWindow: claudeSettings.useNewITermWindow,
         });
-      } else {
+      } else if (appSettings.activeTab === "codex") {
         const codexSettings = appSettings.codex;
         result = await invoke<ExecutionResult>("execute_codex_command", {
           executionTime: codexSettings.executionTime,
@@ -417,6 +460,20 @@ function App() {
           codexCommand: codexSettings.command,
           autoRetryOnRateLimit: codexSettings.autoRetryOnRateLimit,
           useNewWindow: codexSettings.useNewITermWindow,
+        });
+      } else {
+        const geminiSettings = appSettings.gemini;
+        result = await invoke<ExecutionResult>("execute_gemini_command", {
+          executionTime: geminiSettings.executionTime,
+          targetDirectory: geminiSettings.targetDirectory,
+          geminiModel: geminiSettings.model,
+          geminiApprovalMode: geminiSettings.approvalMode,
+          geminiOutputFormat: geminiSettings.outputFormat,
+          geminiIncludeAllFiles: geminiSettings.includeAllFiles,
+          geminiIncludeDirectories: geminiSettings.includeDirectories,
+          geminiCommand: geminiSettings.command,
+          autoRetryOnRateLimit: geminiSettings.autoRetryOnRateLimit,
+          useNewWindow: geminiSettings.useNewITermWindow,
         });
       }
 
@@ -508,6 +565,11 @@ function App() {
     setAppSettings({ ...appSettings, codex: settings });
   }
 
+  // Gemini設定変更ハンドラー
+  function handleGeminiSettingsChange(settings: GeminiToolSettings) {
+    setAppSettings({ ...appSettings, gemini: settings });
+  }
+
   // 共通設定変更ハンドラー
   function handleExecutionTimeChange(time: string) {
     if (appSettings.activeTab === "claude") {
@@ -515,12 +577,19 @@ function App() {
         ...appSettings,
         claude: { ...appSettings.claude, executionTime: time },
       });
-    } else {
+      return;
+    }
+    if (appSettings.activeTab === "codex") {
       setAppSettings({
         ...appSettings,
         codex: { ...appSettings.codex, executionTime: time },
       });
+      return;
     }
+    setAppSettings({
+      ...appSettings,
+      gemini: { ...appSettings.gemini, executionTime: time },
+    });
   }
 
   function handleTargetDirectoryChange(dir: string) {
@@ -529,12 +598,19 @@ function App() {
         ...appSettings,
         claude: { ...appSettings.claude, targetDirectory: dir },
       });
-    } else {
+      return;
+    }
+    if (appSettings.activeTab === "codex") {
       setAppSettings({
         ...appSettings,
         codex: { ...appSettings.codex, targetDirectory: dir },
       });
+      return;
     }
+    setAppSettings({
+      ...appSettings,
+      gemini: { ...appSettings.gemini, targetDirectory: dir },
+    });
   }
 
   function handleUseNewITermWindowChange(value: boolean) {
@@ -543,12 +619,19 @@ function App() {
         ...appSettings,
         claude: { ...appSettings.claude, useNewITermWindow: value },
       });
-    } else {
+      return;
+    }
+    if (appSettings.activeTab === "codex") {
       setAppSettings({
         ...appSettings,
         codex: { ...appSettings.codex, useNewITermWindow: value },
       });
+      return;
     }
+    setAppSettings({
+      ...appSettings,
+      gemini: { ...appSettings.gemini, useNewITermWindow: value },
+    });
   }
 
   function handleAutoRetryOnRateLimitChange(value: boolean) {
@@ -557,12 +640,19 @@ function App() {
         ...appSettings,
         claude: { ...appSettings.claude, autoRetryOnRateLimit: value },
       });
-    } else {
+      return;
+    }
+    if (appSettings.activeTab === "codex") {
       setAppSettings({
         ...appSettings,
         codex: { ...appSettings.codex, autoRetryOnRateLimit: value },
       });
+      return;
     }
+    setAppSettings({
+      ...appSettings,
+      gemini: { ...appSettings.gemini, autoRetryOnRateLimit: value },
+    });
   }
 
   return (
@@ -598,12 +688,19 @@ function App() {
               useNewITermWindow={appSettings.claude.useNewITermWindow}
               onSettingsChange={handleClaudeSettingsChange}
             />
-          ) : (
+          ) : appSettings.activeTab === "codex" ? (
             <CodexSettings
               settings={appSettings.codex}
               isRunning={isRunning}
               useNewITermWindow={appSettings.codex.useNewITermWindow}
               onSettingsChange={handleCodexSettingsChange}
+            />
+          ) : (
+            <GeminiSettings
+              settings={appSettings.gemini}
+              isRunning={isRunning}
+              useNewITermWindow={appSettings.gemini.useNewITermWindow}
+              onSettingsChange={handleGeminiSettingsChange}
             />
           )}
 

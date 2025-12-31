@@ -7,7 +7,7 @@ macOS上でiTermを通じて、指定した時刻にClaude CodeまたはCodex CL
 ## 機能
 
 - 🕐 **スケジュール実行**: 指定した時刻にCLIコマンドを実行
-- 🔀 **マルチツール対応**: Claude CodeとCodexをタブで切り替え
+- 🔀 **マルチツール対応**: Claude Code / Codex / Gemini CLIをタブで切り替え
 - 🔄 **Rate Limit自動リトライ**: Rate Limitを検出したら自動的に再実行
 - 📊 **リアルタイム監視**: 実行状況とターミナル出力を追跡
 - 💾 **設定の永続化**: 各ツールの設定を保存して次回も利用可能
@@ -24,6 +24,7 @@ macOS上でiTermを通じて、指定した時刻にClaude CodeまたはCodex CL
 - 以下のいずれか（または両方）がインストール・設定済みであること：
   - [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)
   - [Codex CLI](https://github.com/openai/codex)
+  - [Gemini CLI](https://google-gemini.github.io/gemini-cli/)
 - Node.js 20以上とnpm/pnpm（ビルド用）
 - Rustツールチェーン（ビルド用）
 
@@ -87,7 +88,7 @@ npm run tauri:build
 ### 基本的な使用方法
 
 1. **アプリケーションを起動**
-2. **ツールを選択**: タブで「Claude Code」または「Codex」を選択
+2. **ツールを選択**: タブで「Claude Code」「Codex」「Gemini CLI」を選択
 3. **実行時刻を設定**: コマンドを実行する時刻を選択
 4. **ディレクトリを選択**: コマンドを実行する作業ディレクトリを選択
 5. **ツール固有の設定**: 各ツールのオプションを設定
@@ -109,6 +110,16 @@ npm run tauri:build
   - `Full Auto`: 失敗時のみ承認を要求（注意して使用）
 - **Web検索**: インターネット検索を使用してコンテキストを収集
 - **コマンド**: Codexに実行させたい命令
+
+#### Gemini CLI
+- **モデル**: 使用するモデルを選択（例: gemini-2.5-pro）
+- **承認モード**:
+  - `Default`: 重要操作は都度確認
+  - `Auto Edit`: ファイル編集を自動承認
+  - `YOLO`: すべて自動承認（注意して使用）
+- **コンテキスト**: 全ファイルの追加や追加ディレクトリ指定
+- **出力形式**: text / json
+- **コマンド**: Geminiに実行させたい命令
 
 ### 実行モード
 
@@ -219,10 +230,17 @@ npm run tauri dev
 - **実行モード**: 新規iTermウィンドウ
 - **自動リトライ**: 無効
 
+#### Gemini CLI
+- **モデル**: `gemini-2.5-pro`
+- **承認モード**: `Default`
+- **コンテキスト**: 無効
+- **実行モード**: 新規iTermウィンドウ
+- **自動リトライ**: 無効
+
 ### 永続化される設定
 
 以下の設定はlocalStorageに保存されます（ツールごとに独立）：
-- 選択中のツール（Claude Code / Codex）
+- 選択中のツール（Claude Code / Codex / Gemini CLI）
 - ターゲットディレクトリ
 - ツール固有設定
 - 最後のコマンド

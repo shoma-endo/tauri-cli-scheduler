@@ -1,6 +1,6 @@
 [package]
 name = "tauri-cli-scheduler"
-version = "25.12.30"
+version = "25.12.31"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"

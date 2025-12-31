@@ -1,5 +1,5 @@
 // ツールタイプ定義
-export type ToolType = "claude" | "codex";
+export type ToolType = "claude" | "codex" | "gemini";
 
 // 共通設定インターフェース
 export interface BaseToolSettings {
@@ -23,11 +23,21 @@ export interface CodexToolSettings extends BaseToolSettings {
   enableSearch: boolean;
 }
 
+// Gemini固有設定
+export interface GeminiToolSettings extends BaseToolSettings {
+  model: string; // "gemini-2.5-pro" など
+  approvalMode: "default" | "auto_edit" | "yolo";
+  outputFormat: "text" | "json";
+  includeAllFiles: boolean;
+  includeDirectories: string;
+}
+
 // アプリケーション全体の設定
 export interface AppSettings {
   activeTab: ToolType;
   claude: ClaudeToolSettings;
   codex: CodexToolSettings;
+  gemini: GeminiToolSettings;
 }
 
 // 実行結果インターフェース
@@ -69,14 +79,29 @@ export const DEFAULT_CODEX_SETTINGS: CodexToolSettings = {
   useNewITermWindow: true,
 };
 
+export const DEFAULT_GEMINI_SETTINGS: GeminiToolSettings = {
+  executionTime: "",
+  targetDirectory: "",
+  command: "",
+  model: "",
+  approvalMode: "default",
+  outputFormat: "text",
+  includeAllFiles: false,
+  includeDirectories: "",
+  autoRetryOnRateLimit: false,
+  useNewITermWindow: true,
+};
+
 // ツール表示名
 export const TOOL_DISPLAY_NAMES: Record<ToolType, string> = {
   claude: "Claude Code",
   codex: "Codex",
+  gemini: "Gemini CLI",
 };
 
 // ツールコマンド名
 export const TOOL_COMMANDS: Record<ToolType, string> = {
   claude: "claude",
   codex: "codex",
+  gemini: "gemini",
 };

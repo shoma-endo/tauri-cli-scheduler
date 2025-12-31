@@ -11,7 +11,7 @@ export function TabSelector({
   onTabChange,
   disabled = false,
 }: TabSelectorProps) {
-  const tabs: ToolType[] = ["claude", "codex"];
+  const tabs: ToolType[] = ["claude", "codex", "gemini"];
 
   return (
     <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
