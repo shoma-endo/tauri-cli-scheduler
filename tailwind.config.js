@@ -4,45 +4,41 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Semantic Color System
+        // Semantic Color System (mapped to CSS variables)
         primary: {
-          DEFAULT: '#3b82f6',      // Blue
+          DEFAULT: '#3b82f6',      // Blue (Keep static for brand color)
           50: '#eff6ff',
-          600: '#2563eb',          // Hover
-          700: '#1d4ed8',          // Active
-        },
-        secondary: {
-          DEFAULT: '#8b5cf6',      // Purple
-          600: '#7c3aed',
+          600: '#2563eb',
+          700: '#1d4ed8',
         },
         surface: {
-          base: '#ffffff',
-          subtle: '#f9fafb',       // Lightest gray
-          muted: '#f3f4f6',        // Light gray
-          border: '#e5e7eb',       // Borders
+          base: 'var(--surface-base)',
+          subtle: 'var(--surface-subtle)',
+          muted: 'var(--surface-muted)',
+          border: 'var(--surface-border)',
         },
-        'surface-dark': {
-          base: '#111827',         // Gray-900
-          subtle: '#1f2937',       // Gray-800
-          muted: '#374151',        // Gray-700
-          border: '#4b5563',       // Gray-600
+        'surface-dark': { // Keep for backward compatibility if needed, but they resolve to same vars in dark mode
+          base: 'var(--surface-base)',
+          subtle: 'var(--surface-subtle)',
+          muted: 'var(--surface-muted)',
+          border: 'var(--surface-border)',
         },
         text: {
-          primary: '#111827',      // Gray-900
-          secondary: '#6b7280',    // Gray-500
-          muted: '#9ca3af',        // Gray-400
-          inverse: '#ffffff',      // For dark bg
+          primary: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          muted: 'var(--text-muted)',
+          inverse: 'var(--text-inverse)',
         },
         'text-dark': {
-          primary: '#f9fafb',      // Gray-50
-          secondary: '#d1d5db',    // Gray-300
-          muted: '#9ca3af',        // Gray-400
+          primary: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          muted: 'var(--text-muted)',
         },
         status: {
-          success: '#10b981',      // Green-500
-          error: '#ef4444',        // Red-500
-          warning: '#f59e0b',      // Amber-500
-          info: '#3b82f6',         // Blue-500
+          success: '#10b981',
+          error: '#ef4444',
+          warning: '#f59e0b',
+          info: '#3b82f6',
         },
       },
       spacing: {
