@@ -1,4 +1,6 @@
 import { ClaudeToolSettings } from "../types/tools";
+import { Select } from "./ui/Select";
+import { Input } from "./ui/Input";
 
 interface ClaudeSettingsProps {
   settings: ClaudeToolSettings;
@@ -14,30 +16,29 @@ export function ClaudeSettings({
   onSettingsChange,
 }: ClaudeSettingsProps) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Claude固有設定（新規ウィンドウモードのみ） */}
       {useNewITermWindow && (
-        <div>
-          <label className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
-            モデル
-          </label>
-          <select
+        <>
+          <Select
+            label="Model"
             value={settings.model}
             onChange={(e) =>
               onSettingsChange({ ...settings, model: e.target.value })
             }
-            className="w-full px-4 py-3 text-sm bg-gray-50 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 focus:border-blue-500 transition-colors duration-200 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            options={[
+              { value: "claude-opus-4-5-20251101", label: "Opus 4.5" },
+              { value: "claude-sonnet-4-5-20250929", label: "Sonnet 4.5" },
+              { value: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
+            ]}
             disabled={isRunning}
-          >
-            <option value="claude-opus-4-5-20251101">Opus 4.5</option>
-            <option value="claude-sonnet-4-5-20250929">Sonnet 4.5</option>
-            <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
-          </select>
+          />
 
-          <div className="mt-4">
-            <label className="flex items-center cursor-pointer">
+          <div className="flex items-start gap-3 p-3 bg-surface-subtle dark:bg-surface-dark-muted rounded-lg border border-surface-border dark:border-surface-dark-border">
+            <div className="flex items-center h-5">
               <input
                 type="checkbox"
+                id="skipPermissions"
                 checked={settings.dangerouslySkipPermissions}
                 onChange={(e) =>
                   onSettingsChange({
@@ -45,59 +46,37 @@ export function ClaudeSettings({
                     dangerouslySkipPermissions: e.target.checked,
                   })
                 }
-                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                className="w-4 h-4 text-primary-DEFAULT bg-surface-base border-surface-border rounded focus:ring-2 focus:ring-primary-DEFAULT dark:bg-surface-dark-subtle dark:border-surface-dark-border transition-colors duration-200"
                 disabled={isRunning}
               />
-              <span className="ml-2 text-sm font-medium text-gray-900 dark:text-white">
-                権限確認をスキップ（危険）
-              </span>
-            </label>
-            <p className="ml-6 text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Claude Codeの権限確認を省略します（安全性に注意）
-            </p>
+            </div>
+            <div className="flex-1 text-sm">
+              <label
+                htmlFor="skipPermissions"
+                className="font-medium text-text-primary dark:text-text-dark-primary cursor-pointer select-none"
+              >
+                Skip Permission Checks (Danger)
+              </label>
+              <p className="text-xs text-text-secondary dark:text-text-dark-secondary mt-1">
+                Bypasses Claude Code permission prompts. Use with caution.
+              </p>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Claude Codeで実行する命令 */}
-      <div>
-        <label className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
-          Claude Codeで実行する命令
-        </label>
-        <div className="relative">
-          <input
-            type="text"
-            value={settings.command}
-            onChange={(e) =>
-              onSettingsChange({ ...settings, command: e.target.value })
-            }
-            className="w-full px-4 py-3 pr-12 text-sm bg-gray-50 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 focus:border-blue-500 transition-colors duration-200 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={isRunning}
-          />
-          <button
-            type="button"
-            onClick={() => onSettingsChange({ ...settings, command: "" })}
-            className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={isRunning}
-            title="クリア"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
+      <Input
+        label="Claude Code Instruction"
+        type="text"
+        value={settings.command}
+        onChange={(e) =>
+          onSettingsChange({ ...settings, command: e.target.value })
+        }
+        disabled={isRunning}
+        placeholder="e.g.: analyze the code structure"
+      />
     </div>
   );
 }
+

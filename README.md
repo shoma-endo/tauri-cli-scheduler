@@ -227,6 +227,13 @@ npm run tauri dev
 ├── src/                    # フロントエンド（React + TypeScript）
 │   ├── App.tsx            # メインアプリケーション（2列グリッドレイアウト）
 │   ├── components/        # UIコンポーネント
+│   │   ├── ui/            # Atomic UIコンポーネント（再利用可能、セマンティック設計）
+│   │   │   ├── Button.tsx     # 4 variants × 3 sizes、hover shadow対応
+│   │   │   ├── Card.tsx       # カード基本、ホバー効果搭載
+│   │   │   ├── Badge.tsx      # ステータス表示（6 variants）
+│   │   │   ├── Input.tsx      # テキスト入力、focus shadow対応
+│   │   │   ├── Select.tsx     # ドロップダウン、focus shadow対応
+│   │   │   └── index.ts       # エクスポート統合
 │   │   ├── Header.tsx             # ヘッダー（バージョン表示）
 │   │   ├── TabSelector.tsx        # ツール切り替えタブ
 │   │   ├── SettingsPanel.tsx      # 統合設定パネル（左列コンテナ）
@@ -253,6 +260,7 @@ npm run tauri dev
 │   │   ├── run-codex.sh
 │   │   └── run-gemini.sh
 │   └── tauri.conf.json    # Tauri設定
+├── tailwind.config.js     # セマンティックデザイントークン定義（色、間隔、shadow等）
 ├── CLAUDE.md              # AIアシスタント用の指示
 └── update-version.js      # バージョン自動更新スクリプト
 ```
@@ -309,6 +317,39 @@ npm run tauri dev
 **レスポンシブ対応**:
 - sm: 1列レイアウト（モバイル）
 - md/lg: 3列グリッド（2:1比率）
+
+### デザインシステム（セマンティックトークン）
+
+**カラートークン**:
+- `primary`: メインアクション色（#3b82f6 / ブルー系）
+- `surface`: 背景・カード色（white ↔ dark: #111827）
+- `text`: テキスト色（#111827 / dark: #f9fafb）
+- `status`: ステータス色
+  - `success`: #10b981 （成功）
+  - `error`: #ef4444 （エラー）
+  - `warning`: #f59e0b （警告）
+  - `info`: #3b82f6 （情報）
+
+**UI コンポーネント**:
+| コンポーネント | 機能 | 特徴 |
+|------------|------|------|
+| Button | 4 variants × 3 sizes | ホバー時 shadow-lg、focus ring-2 |
+| Card | レイアウト基本 | ホバー可能、shadow transition搭載 |
+| Badge | ステータス表示 | 6 variants で色分け表示 |
+| Input | テキスト入力 | フォーカス時 shadow-lg、error表示対応 |
+| Select | ドロップダウン | カスタムアロー、フォーカス shadow対応 |
+
+**ビジュアルエフェクト**:
+- `transition-all duration-200`: すべての UI 要素に滑らかなトランジション（200ms）
+- `hover:shadow-lg/md`: ホバー時に影で奥行き表現
+- `focus:shadow-lg`: フォーカス状態を shadow で強調
+- `dark:*` 変種: 完全なダークモード対応（53+ トークン参照）
+
+**ダークモード実装**:
+- Tailwind の `darkMode: 'class'` で自動適用
+- `<html class="dark">` で切り替え
+- すべてのセマンティックトークンに dark: 対応版を用意
+- 例: `bg-surface-subtle dark:bg-surface-dark-muted`
 
 ### スケジュール管理（Launchd統合）
 

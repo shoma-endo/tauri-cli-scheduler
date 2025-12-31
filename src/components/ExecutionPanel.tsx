@@ -1,4 +1,7 @@
 import { ITermStatus, ToolType, TOOL_DISPLAY_NAMES } from "../types/tools";
+import { Button } from "./ui/Button";
+import { Card, CardContent } from "./ui/Card";
+import { Badge } from "./ui/Badge";
 
 interface ExecutionPanelProps {
   activeTab: ToolType;
@@ -23,40 +26,51 @@ export function ExecutionPanel({
 }: ExecutionPanelProps) {
   const toolName = TOOL_DISPLAY_NAMES[activeTab];
 
+  // ステータスのバリアントを決定
+  const getStatusVariant = (): "success" | "error" | "warning" | "info" => {
+    if (status.includes("エラー")) return "error";
+    if (status.includes("完了")) return "success";
+    if (status.includes("Rate limit")) return "warning";
+    return "info";
+  };
+
   return (
     <div className="space-y-4">
-      <div className="pt-4">
-        <div className="flex items-center gap-2 mb-3 text-sm text-gray-600 dark:text-gray-400">
-          <svg
-            className="w-5 h-5 text-blue-600 dark:text-blue-400"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              fillRule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-              clipRule="evenodd"
-            />
-          </svg>
-          <span>
-            プライバシーとセキュリティ &gt; アクセシビリティ
-            にて、このアプリを追加し有効化してください
-          </span>
-        </div>
+      {/* プライバシーバナー */}
+      <div className="pt-4 px-4 py-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg border-2 border-primary-50 dark:border-primary-700/50 flex items-center gap-2">
+        <svg
+          className="w-5 h-5 text-primary-DEFAULT flex-shrink-0"
+          fill="currentColor"
+          viewBox="0 0 20 20"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            fillRule="evenodd"
+            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+            clipRule="evenodd"
+          />
+        </svg>
+        <span className="text-sm text-text-secondary dark:text-text-dark-secondary">
+          プライバシーとセキュリティ &gt; アクセシビリティ
+          にて、このアプリを追加し有効化してください
+        </span>
+      </div>
+
+      {/* 実行制御ボタン */}
+      <div>
         {!isRunning ? (
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="lg"
             onClick={onStart}
-            className="w-full px-6 py-3 font-medium text-white bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl shadow-lg hover:shadow-xl hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={!iTermStatus?.is_installed}
+            className="w-full"
           >
             <svg
               className="w-5 h-5 inline-block mr-2"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
             >
               <path
                 strokeLinecap="round"
@@ -72,19 +86,19 @@ export function ExecutionPanel({
               />
             </svg>
             開始
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="danger"
+            size="lg"
             onClick={onStop}
-            className="w-full px-6 py-3 font-medium text-white bg-gradient-to-r from-red-500 to-red-800 rounded-2xl shadow-lg hover:shadow-xl hover:from-red-600 hover:to-red-700 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-red-300 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full"
           >
             <svg
               className="w-5 h-5 inline-block mr-2"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
             >
               <path
                 strokeLinecap="round"
@@ -100,44 +114,59 @@ export function ExecutionPanel({
               />
             </svg>
             停止
-          </button>
+          </Button>
         )}
       </div>
 
+      {/* カウントダウン表示 */}
       {isRunning && countdown && (
-        <div className="mt-6 p-4 text-center bg-blue-50 dark:bg-blue-900 rounded-lg border-2 border-blue-200 dark:border-blue-700">
-          <p className="text-lg font-semibold text-blue-800 dark:text-blue-200">
-            残り時間: {countdown}
-          </p>
-        </div>
+        <Card>
+          <CardContent className="text-center py-4">
+            <p className="text-lg font-semibold text-primary-DEFAULT dark:text-blue-300">
+              残り時間: {countdown}
+            </p>
+          </CardContent>
+        </Card>
       )}
 
+      {/* ステータス表示 */}
       {status && (
-        <div
-          className={`mt-4 p-4 rounded-lg border-2 transition-all duration-300 ${
-            status.includes("エラー")
-              ? "text-red-700 bg-red-50 border-red-200 dark:bg-red-900 dark:text-red-200 dark:border-red-700"
-              : status.includes("完了")
-                ? "text-green-700 bg-green-50 border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-700"
-                : "text-gray-700 bg-gray-50 border-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
-          }`}
-        >
-          <p className="font-medium">ステータス: {status}</p>
-        </div>
+        <Card>
+          <CardContent className="flex items-center justify-between gap-3">
+            <div>
+              <p className="font-medium text-text-primary dark:text-text-dark-primary">
+                {status}
+              </p>
+            </div>
+            <Badge variant={getStatusVariant()} size="sm">
+              {status.includes("エラー")
+                ? "エラー"
+                : status.includes("完了")
+                  ? "完了"
+                  : status.includes("Rate limit")
+                    ? "待機中"
+                    : "実行中"}
+            </Badge>
+          </CardContent>
+        </Card>
       )}
 
+      {/* ターミナル出力 */}
       {toolStatus && (
-        <div>
-          <label className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
-            {toolName} Status
-          </label>
-          <div className="p-4 bg-black text-gray-100 rounded-lg font-mono text-xs overflow-auto max-h-48 border-2 border-gray-700 shadow-inner">
-            <pre className="whitespace-pre-wrap leading-relaxed">
-              {toolStatus}
-            </pre>
-          </div>
-        </div>
+        <Card>
+          <CardContent className="pt-0">
+            <label className="block mb-3 text-sm font-medium text-text-primary dark:text-text-dark-primary">
+              {toolName} ターミナル出力
+            </label>
+            <div className="p-4 bg-surface-dark-base text-gray-100 dark:text-gray-200 rounded-lg font-mono text-xs overflow-auto max-h-48 border-2 border-surface-border dark:border-surface-dark-border shadow-inner">
+              <pre className="whitespace-pre-wrap leading-relaxed">
+                {toolStatus}
+              </pre>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
 }
+

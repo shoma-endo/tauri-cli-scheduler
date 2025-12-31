@@ -24,11 +24,11 @@ export function Button({
 
   const variantClasses: Record<ButtonVariant, string> = {
     primary:
-      "bg-primary-DEFAULT text-white hover:bg-primary-600 active:bg-primary-700 focus:ring-primary-300 dark:focus:ring-primary-600",
+      "bg-primary-DEFAULT text-white hover:bg-primary-600 active:bg-primary-700 hover:shadow-lg focus:ring-primary-300 dark:focus:ring-primary-600",
     secondary:
-      "bg-surface-muted text-text-primary hover:bg-surface-border dark:bg-surface-dark-muted dark:text-text-dark-primary dark:hover:bg-surface-dark-border",
+      "bg-surface-muted text-text-primary hover:bg-surface-border hover:shadow-md dark:bg-surface-dark-muted dark:text-text-dark-primary dark:hover:bg-surface-dark-border",
     danger:
-      "bg-status-error text-white hover:bg-red-600 active:bg-red-700 focus:ring-red-300 dark:focus:ring-red-800",
+      "bg-status-error text-white hover:bg-red-600 active:bg-red-700 hover:shadow-lg focus:ring-red-300 dark:focus:ring-red-800",
     ghost:
       "text-text-secondary hover:bg-surface-subtle dark:text-text-dark-secondary dark:hover:bg-surface-dark-subtle",
   };

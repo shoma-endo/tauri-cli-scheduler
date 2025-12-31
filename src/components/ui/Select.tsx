@@ -40,7 +40,7 @@ export function Select({
           bg-surface-base dark:bg-surface-dark-subtle
           border-2 border-surface-border dark:border-surface-dark-border
           text-text-primary dark:text-text-dark-primary
-          focus:outline-none focus:ring-2 focus:ring-primary-DEFAULT focus:border-transparent
+          focus:outline-none focus:ring-2 focus:ring-primary-DEFAULT focus:border-transparent focus:shadow-lg
           dark:focus:ring-blue-500
           transition-all duration-200
           disabled:opacity-50 disabled:cursor-not-allowed
