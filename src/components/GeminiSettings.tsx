@@ -23,20 +23,20 @@ export function GeminiSettings({
           {/* モデル表示 */}
           <div className="p-3 bg-surface-subtle dark:bg-surface-dark-subtle border border-surface-border dark:border-surface-dark-border rounded-lg">
             <label className="block mb-1 text-sm font-medium text-text-primary dark:text-text-dark-primary">
-              Model
+              モデル
             </label>
             <div className="text-sm text-text-primary dark:text-text-dark-primary font-medium">
-              Auto (Gemini 3)
+              自動 (Gemini 3)
             </div>
             <p className="mt-1 text-xs text-text-secondary dark:text-text-dark-secondary">
-              Gemini CLI automatically selects the optimal model (gemini-3-pro / gemini-3-flash)
+              Gemini CLIが最適なモデルを自動選択します (gemini-3-pro / gemini-3-flash)
             </p>
           </div>
 
           {/* 承認モード */}
           <div className="p-3 bg-surface-subtle dark:bg-surface-dark-muted rounded-lg border border-surface-border dark:border-surface-dark-border">
             <div className="text-sm font-medium text-text-primary dark:text-text-dark-primary mb-3">
-              Approval Mode
+              承認モード
             </div>
             <div className="space-y-3">
               <div className="flex items-start">
@@ -57,10 +57,10 @@ export function GeminiSettings({
                     htmlFor="geminiApprovalDefault"
                     className="text-sm font-medium text-text-primary dark:text-text-dark-primary cursor-pointer"
                   >
-                    Default
+                    デフォルト
                   </label>
                   <p className="text-xs text-text-secondary dark:text-text-dark-secondary mt-1">
-                    Ask for confirmation on critical actions
+                    重要な操作時に確認を求めます
                   </p>
                 </div>
               </div>
@@ -82,10 +82,10 @@ export function GeminiSettings({
                     htmlFor="geminiApprovalAutoEdit"
                     className="text-sm font-medium text-text-primary dark:text-text-dark-primary cursor-pointer"
                   >
-                    Auto Edit
+                    自動編集
                   </label>
                   <p className="text-xs text-text-secondary dark:text-text-dark-secondary mt-1">
-                    Automatically approve file edits
+                    ファイル編集を自動的に承認します
                   </p>
                 </div>
               </div>
@@ -110,7 +110,7 @@ export function GeminiSettings({
                     YOLO
                   </label>
                   <p className="text-xs text-text-secondary dark:text-text-dark-secondary mt-1">
-                    Automatically approve ALL actions (Use with caution)
+                    すべての操作を自動承認（注意して使用）
                   </p>
                 </div>
               </div>
@@ -120,7 +120,7 @@ export function GeminiSettings({
           {/* コンテキスト設定 */}
           <div className="p-3 bg-surface-subtle dark:bg-surface-dark-muted rounded-lg border border-surface-border dark:border-surface-dark-border">
             <div className="text-sm font-medium text-text-primary dark:text-text-dark-primary mb-3">
-              Context Settings
+              コンテキスト設定
             </div>
             <div className="space-y-3">
               <div className="flex items-start">
@@ -144,7 +144,7 @@ export function GeminiSettings({
                     htmlFor="includeAllFiles"
                     className="font-medium text-text-primary dark:text-text-dark-primary cursor-pointer select-none"
                   >
-                    Include All Files
+                    すべてのファイルを含める
                   </label>
                 </div>
               </div>
@@ -153,7 +153,7 @@ export function GeminiSettings({
 
           {/* 追加ディレクトリ */}
           <Input
-            label="Additional Directories (comma separated)"
+            label="追加ディレクトリ（カンマ区切り）"
             type="text"
             value={settings.includeDirectories}
             onChange={(e) =>
@@ -163,12 +163,12 @@ export function GeminiSettings({
               })
             }
             disabled={isRunning}
-            placeholder="e.g.: ./docs,./specs"
+            placeholder="例: ./docs,./specs"
           />
 
           {/* 出力形式 */}
           <Select
-            label="Output Format"
+            label="出力形式"
             value={settings.outputFormat}
             onChange={(e) =>
               onSettingsChange({
@@ -187,14 +187,14 @@ export function GeminiSettings({
 
       {/* Geminiで実行する命令 */}
       <Input
-        label="Gemini Instruction"
+        label="Gemini 命令"
         type="text"
         value={settings.command}
         onChange={(e) =>
           onSettingsChange({ ...settings, command: e.target.value })
         }
         disabled={isRunning}
-        placeholder="e.g.: analyze the code structure"
+        placeholder="例: コード構造を分析してください"
       />
     </div>
   );

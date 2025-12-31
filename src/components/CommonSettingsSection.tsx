@@ -76,7 +76,7 @@ export function CommonSettingsSection({
               d="M12 8v4l3 2m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <CardTitle>execution time settings</CardTitle>
+          <CardTitle>実行時刻設定</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex gap-3 items-center">
@@ -106,12 +106,11 @@ export function CommonSettingsSection({
                   d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-              Set to{" "}
               {String((parseInt(executionTime.split(":")[0]) + 1) % 24).padStart(
                 2,
                 "0",
               )}
-              :01
+              :01 に設定
             </Button>
           </div>
         </CardContent>
@@ -134,9 +133,9 @@ export function CommonSettingsSection({
                 d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
               />
             </svg>
-            <CardTitle>Execution Target Directory</CardTitle>
+            <CardTitle>実行対象ディレクトリ</CardTitle>
             <Badge variant="warning">
-              New Window Mode Only
+              新規ウィンドウモードのみ
             </Badge>
           </CardHeader>
           <CardContent>
@@ -155,7 +154,7 @@ export function CommonSettingsSection({
                 onClick={selectDirectory}
                 disabled={isRunning}
               >
-                Select Folder
+                フォルダを選択
               </Button>
             </div>
           </CardContent>
@@ -178,7 +177,7 @@ export function CommonSettingsSection({
               d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5.36 5.36l-.707.707M9 19.414l-.707-.707"
             />
           </svg>
-          <CardTitle>iTerm Status</CardTitle>
+          <CardTitle>iTerm ステータス</CardTitle>
         </CardHeader>
         <CardContent>
           {iTermStatus ? (
@@ -190,7 +189,7 @@ export function CommonSettingsSection({
                   }`}
                 ></div>
                 <span className="text-sm text-text-primary dark:text-text-dark-primary">
-                  {iTermStatus.is_running ? "Running" : "Not Running"}
+                  {iTermStatus.is_running ? "実行中" : "停止中"}
                 </span>
                 <Button
                   variant="primary"
@@ -218,7 +217,7 @@ export function CommonSettingsSection({
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 rounded-full bg-status-error"></div>
                 <span className="text-sm text-status-error font-medium">
-                  Not Installed
+                  未インストール
                 </span>
                 <Button
                   variant="primary"
@@ -247,7 +246,7 @@ export function CommonSettingsSection({
             <div className="flex items-center gap-3">
               <div className="w-3 h-3 rounded-full bg-text-muted animate-pulse"></div>
               <span className="text-sm text-text-secondary dark:text-text-dark-secondary">
-                Checking...
+                確認中...
               </span>
             </div>
           )}
@@ -272,7 +271,7 @@ export function CommonSettingsSection({
                 d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
               />
             </svg>
-            <CardTitle>Window Settings</CardTitle>
+            <CardTitle>ウィンドウ設定</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -291,7 +290,7 @@ export function CommonSettingsSection({
                   htmlFor="useNewWindow"
                   className="ml-2 text-sm font-medium text-text-primary dark:text-text-dark-primary"
                 >
-                  Use New Window
+                  新規ウィンドウを使用
                 </label>
               </div>
               <div className="flex items-start">
@@ -310,10 +309,10 @@ export function CommonSettingsSection({
                     htmlFor="useExistingWindow"
                     className="text-sm font-medium text-text-primary dark:text-text-dark-primary"
                   >
-                    Use Existing Window
+                    既存ウィンドウを使用
                   </label>
                   <p className="text-xs text-text-secondary dark:text-text-dark-secondary mt-1">
-                    * Requires active CLI session
+                    ※ CLIセッションが必要です
                   </p>
                 </div>
               </div>
@@ -337,7 +336,7 @@ export function CommonSettingsSection({
                 d="M13 10V3L4 14h7v7l9-11h-7z"
               />
             </svg>
-            <CardTitle>Rate Limit Strategy</CardTitle>
+            <CardTitle>レート制限対策</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -356,7 +355,7 @@ export function CommonSettingsSection({
                   htmlFor="autoRetryEnabled"
                   className="ml-2 text-sm font-medium text-text-primary dark:text-text-dark-primary"
                 >
-                  Auto Retry
+                  自動リトライ
                 </label>
               </div>
               <div className="flex items-center">
@@ -374,7 +373,7 @@ export function CommonSettingsSection({
                   htmlFor="autoRetryDisabled"
                   className="ml-2 text-sm font-medium text-text-primary dark:text-text-dark-primary"
                 >
-                  Abort
+                  中止
                 </label>
               </div>
             </div>

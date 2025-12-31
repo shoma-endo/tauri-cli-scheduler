@@ -21,7 +21,7 @@ export function ClaudeSettings({
       {useNewITermWindow && (
         <>
           <Select
-            label="Model"
+            label="モデル"
             value={settings.model}
             onChange={(e) =>
               onSettingsChange({ ...settings, model: e.target.value })
@@ -55,10 +55,10 @@ export function ClaudeSettings({
                 htmlFor="skipPermissions"
                 className="font-medium text-text-primary dark:text-text-dark-primary cursor-pointer select-none"
               >
-                Skip Permission Checks (Danger)
+                権限チェックをスキップ（危険）
               </label>
               <p className="text-xs text-text-secondary dark:text-text-dark-secondary mt-1">
-                Bypasses Claude Code permission prompts. Use with caution.
+                Claude Codeの権限確認をバイパスします。注意して使用してください。
               </p>
             </div>
           </div>
@@ -67,14 +67,14 @@ export function ClaudeSettings({
 
       {/* Claude Codeで実行する命令 */}
       <Input
-        label="Claude Code Instruction"
+        label="Claude Code 命令"
         type="text"
         value={settings.command}
         onChange={(e) =>
           onSettingsChange({ ...settings, command: e.target.value })
         }
         disabled={isRunning}
-        placeholder="e.g.: analyze the code structure"
+        placeholder="例: コード構造を分析してください"
       />
     </div>
   );

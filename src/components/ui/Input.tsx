@@ -32,7 +32,7 @@ export function Input({
           px-3 py-2 rounded-lg
           bg-surface-base dark:bg-surface-dark-subtle
           border-2 border-surface-border dark:border-surface-dark-border
-          text-text-primary dark:text-text-dark-primary
+          text-gray-900 dark:text-white
           placeholder-text-muted dark:placeholder-text-dark-muted
           focus:outline-none focus:ring-2 focus:ring-primary-DEFAULT focus:border-transparent focus:shadow-lg
           dark:focus:ring-blue-500

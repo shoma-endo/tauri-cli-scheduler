@@ -21,7 +21,7 @@ export function CodexSettings({
       {useNewITermWindow && (
         <>
           <Select
-            label="Model"
+            label="モデル"
             value={settings.model}
             onChange={(e) =>
               onSettingsChange({ ...settings, model: e.target.value })
@@ -36,7 +36,7 @@ export function CodexSettings({
           {/* 承認モード */}
           <div className="p-3 bg-surface-subtle dark:bg-surface-dark-muted rounded-lg border border-surface-border dark:border-surface-dark-border">
             <div className="text-sm font-medium text-text-primary dark:text-text-dark-primary mb-3">
-              Approval Mode
+              承認モード
             </div>
             <div className="space-y-3">
               <div className="flex items-start">
@@ -57,10 +57,10 @@ export function CodexSettings({
                     htmlFor="approvalSuggest"
                     className="text-sm font-medium text-text-primary dark:text-text-dark-primary cursor-pointer"
                   >
-                    Suggest (Recommended)
+                    提案（推奨）
                   </label>
                   <p className="text-xs text-text-secondary dark:text-text-dark-secondary mt-1">
-                    Allows edits within workspace, requires approval for critical actions
+                    ワークスペース内の編集を許可、重要な操作には承認が必要
                   </p>
                 </div>
               </div>
@@ -82,10 +82,10 @@ export function CodexSettings({
                     htmlFor="approvalAuto"
                     className="text-sm font-medium text-text-primary dark:text-text-dark-primary cursor-pointer"
                   >
-                    Auto
+                    自動
                   </label>
                   <p className="text-xs text-text-secondary dark:text-text-dark-secondary mt-1">
-                    Requires approval only for untrusted operations
+                    信頼されていない操作のみ承認が必要
                   </p>
                 </div>
               </div>
@@ -107,10 +107,10 @@ export function CodexSettings({
                     htmlFor="approvalFullAuto"
                     className="text-sm font-medium text-text-primary dark:text-text-dark-primary cursor-pointer"
                   >
-                    Full Auto
+                    完全自動
                   </label>
                   <p className="text-xs text-text-secondary dark:text-text-dark-secondary mt-1">
-                    Requires approval only on failure (Use with caution)
+                    失敗時のみ承認が必要（注意して使用）
                   </p>
                 </div>
               </div>
@@ -139,10 +139,10 @@ export function CodexSettings({
                 htmlFor="enableSearch"
                 className="font-medium text-text-primary dark:text-text-dark-primary cursor-pointer select-none"
               >
-                Enable Web Search
+                Web検索を有効化
               </label>
               <p className="text-xs text-text-secondary dark:text-text-dark-secondary mt-1">
-                Allows Codex to use internet search for gathering context
+                Codexがコンテキスト収集にインターネット検索を使用できるようにします
               </p>
             </div>
           </div>
@@ -151,14 +151,14 @@ export function CodexSettings({
 
       {/* Codexで実行する命令 */}
       <Input
-        label="Codex Instruction"
+        label="Codex 命令"
         type="text"
         value={settings.command}
         onChange={(e) =>
           onSettingsChange({ ...settings, command: e.target.value })
         }
         disabled={isRunning}
-        placeholder="e.g.: analyze the code structure"
+        placeholder="例: コード構造を分析してください"
       />
     </div>
   );

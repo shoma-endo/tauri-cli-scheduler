@@ -16,7 +16,7 @@ export function ToolSettingsSection({
     <Card>
       <CardHeader>
         {toolIcon}
-        <CardTitle>{toolName} Settings</CardTitle>
+        <CardTitle>{toolName} 設定</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">{children}</CardContent>
     </Card>

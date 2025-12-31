@@ -37,7 +37,7 @@ export function ExecutionPanel({
   return (
     <div className="space-y-4">
       {/* プライバシーバナー */}
-      <div className="pt-4 px-4 py-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg border-2 border-primary-50 dark:border-primary-700/50 flex items-center gap-2">
+      <div className="pt-4 px-4 py-3 bg-surface-base dark:bg-surface-dark-base rounded-lg border-2 border-surface-border dark:border-surface-dark-border shadow-card dark:shadow-sm flex items-center gap-2">
         <svg
           className="w-5 h-5 text-primary-DEFAULT flex-shrink-0"
           fill="currentColor"
