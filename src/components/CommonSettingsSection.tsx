@@ -64,7 +64,7 @@ export function CommonSettingsSection({
       <Card>
         <CardHeader>
           <svg
-            className="w-5 h-5 text-primary-DEFAULT"
+            className="w-4 h-4 text-primary-DEFAULT"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -92,9 +92,10 @@ export function CommonSettingsSection({
               variant="primary"
               onClick={setNextHour01}
               disabled={isRunning}
+              className="flex items-center gap-2"
             >
               <svg
-                className="w-4 h-4 mr-2"
+                className="w-4 h-4"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -106,11 +107,13 @@ export function CommonSettingsSection({
                   d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-              {String((parseInt(executionTime.split(":")[0]) + 1) % 24).padStart(
-                2,
-                "0",
-              )}
-              :01 に設定
+              <span>
+                {String((parseInt(executionTime.split(":")[0]) + 1) % 24).padStart(
+                  2,
+                  "0",
+                )}
+                :01 に設定
+              </span>
             </Button>
           </div>
         </CardContent>
@@ -121,7 +124,7 @@ export function CommonSettingsSection({
         <Card>
           <CardHeader>
             <svg
-              className="w-5 h-5 text-primary-DEFAULT"
+              className="w-4 h-4 text-primary-DEFAULT"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -165,7 +168,7 @@ export function CommonSettingsSection({
       <Card>
         <CardHeader>
           <svg
-            className="w-5 h-5 text-primary-DEFAULT"
+            className="w-4 h-4 text-primary-DEFAULT"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -259,7 +262,7 @@ export function CommonSettingsSection({
         <Card>
           <CardHeader>
             <svg
-              className="w-5 h-5 text-primary-DEFAULT"
+              className="w-4 h-4 text-primary-DEFAULT"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -324,7 +327,7 @@ export function CommonSettingsSection({
         <Card>
           <CardHeader>
             <svg
-              className="w-5 h-5 text-primary-DEFAULT"
+              className="w-4 h-4 text-primary-DEFAULT"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
