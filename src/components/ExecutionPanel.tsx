@@ -64,10 +64,10 @@ export function ExecutionPanel({
             size="lg"
             onClick={onStart}
             disabled={!iTermStatus?.is_installed}
-            className="w-full"
+            className="w-full flex items-center justify-center gap-2"
           >
             <svg
-              className="w-5 h-5 inline-block mr-2"
+              className="w-5 h-5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -85,17 +85,17 @@ export function ExecutionPanel({
                 d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
               />
             </svg>
-            開始
+            <span>開始</span>
           </Button>
         ) : (
           <Button
             variant="danger"
             size="lg"
             onClick={onStop}
-            className="w-full"
+            className="w-full flex items-center justify-center gap-2"
           >
             <svg
-              className="w-5 h-5 inline-block mr-2"
+              className="w-5 h-5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -113,7 +113,7 @@ export function ExecutionPanel({
                 d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
               />
             </svg>
-            停止
+            <span>停止</span>
           </Button>
         )}
       </div>
