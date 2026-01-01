@@ -64,7 +64,7 @@ export function CommonSettingsSection({
       <Card>
         <CardHeader>
           <svg
-            className="w-5 h-5 text-primary-DEFAULT"
+            className="w-4 h-4 text-primary-DEFAULT"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -124,7 +124,7 @@ export function CommonSettingsSection({
         <Card>
           <CardHeader>
             <svg
-              className="w-5 h-5 text-primary-DEFAULT"
+              className="w-4 h-4 text-primary-DEFAULT"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -168,7 +168,7 @@ export function CommonSettingsSection({
       <Card>
         <CardHeader>
           <svg
-            className="w-5 h-5 text-primary-DEFAULT"
+            className="w-4 h-4 text-primary-DEFAULT"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -262,7 +262,7 @@ export function CommonSettingsSection({
         <Card>
           <CardHeader>
             <svg
-              className="w-5 h-5 text-primary-DEFAULT"
+              className="w-4 h-4 text-primary-DEFAULT"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -327,7 +327,7 @@ export function CommonSettingsSection({
         <Card>
           <CardHeader>
             <svg
-              className="w-5 h-5 text-primary-DEFAULT"
+              className="w-4 h-4 text-primary-DEFAULT"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"

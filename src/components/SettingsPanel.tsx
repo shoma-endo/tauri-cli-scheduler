@@ -101,7 +101,7 @@ export function SettingsPanel({
           toolName={TOOL_DISPLAY_NAMES["claude"]}
           toolIcon={
             <svg
-              className="w-5 h-5 text-blue-600 dark:text-blue-400"
+              className="w-4 h-4 text-blue-600 dark:text-blue-400"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -129,7 +129,7 @@ export function SettingsPanel({
           toolName={TOOL_DISPLAY_NAMES["codex"]}
           toolIcon={
             <svg
-              className="w-5 h-5 text-green-600 dark:text-green-400"
+              className="w-4 h-4 text-green-600 dark:text-green-400"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -157,7 +157,7 @@ export function SettingsPanel({
           toolName={TOOL_DISPLAY_NAMES["gemini"]}
           toolIcon={
             <svg
-              className="w-5 h-5 text-purple-600 dark:text-purple-400"
+              className="w-4 h-4 text-purple-600 dark:text-purple-400"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
