@@ -82,12 +82,7 @@ export function ScheduleManager({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-      <h3 className="text-lg font-semibold mb-4 dark:text-white">
-        スケジュール管理
-      </h3>
-
-      <div className="space-y-4">
+    <div className="space-y-4">
         {registeredSchedule && (
           <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-4">
             <p className="text-green-800 dark:text-green-200 text-sm">
@@ -129,7 +124,6 @@ export function ScheduleManager({
             {message}
           </div>
         )}
-      </div>
     </div>
   );
 }
