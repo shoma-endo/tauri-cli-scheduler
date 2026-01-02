@@ -1189,7 +1189,6 @@ async fn execute_gemini_command(
     gemini_model: String,
     gemini_approval_mode: String,
     gemini_output_format: String,
-    gemini_include_all_files: bool,
     gemini_include_directories: String,
     gemini_command: String,
     auto_retry_on_rate_limit: bool,
@@ -1296,7 +1295,6 @@ async fn execute_gemini_command(
         &gemini_model,
         &gemini_approval_mode,
         &gemini_output_format,
-        gemini_include_all_files,
         &gemini_include_directories,
         &gemini_command,
         auto_retry_on_rate_limit,
@@ -1317,7 +1315,6 @@ async fn execute_gemini_applescript(
     gemini_model: &str,
     gemini_approval_mode: &str,
     gemini_output_format: &str,
-    gemini_include_all_files: bool,
     gemini_include_directories: &str,
     gemini_command: &str,
     auto_retry_on_rate_limit: bool,
@@ -1330,7 +1327,6 @@ async fn execute_gemini_applescript(
         gemini_model,
         gemini_approval_mode,
         gemini_output_format,
-        gemini_include_all_files,
         gemini_include_directories,
         gemini_command,
         use_new_window,
@@ -1573,7 +1569,6 @@ async fn execute_gemini_applescript_internal(
     gemini_model: &str,
     gemini_approval_mode: &str,
     gemini_output_format: &str,
-    gemini_include_all_files: bool,
     gemini_include_directories: &str,
     gemini_command: &str,
     use_new_window: bool,
@@ -1586,10 +1581,6 @@ async fn execute_gemini_applescript_internal(
 
     if gemini_output_format == "json" {
         options.push("--output-format json".to_string());
-    }
-
-    if gemini_include_all_files {
-        options.push("--all-files".to_string());
     }
 
     let include_directories = gemini_include_directories

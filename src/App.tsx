@@ -68,9 +68,6 @@ function App() {
           parsed.claude.dangerouslySkipPermissions = false;
         }
         if (parsed.gemini) {
-          if (typeof parsed.gemini.includeAllFiles !== "boolean") {
-            parsed.gemini.includeAllFiles = false;
-          }
           if (
             parsed.gemini.outputFormat !== "text" &&
             parsed.gemini.outputFormat !== "json"
@@ -474,7 +471,6 @@ function App() {
           geminiModel: geminiSettings.model,
           geminiApprovalMode: geminiSettings.approvalMode,
           geminiOutputFormat: geminiSettings.outputFormat,
-          geminiIncludeAllFiles: geminiSettings.includeAllFiles,
           geminiIncludeDirectories: geminiSettings.includeDirectories,
           geminiCommand: geminiSettings.command,
           autoRetryOnRateLimit: geminiSettings.autoRetryOnRateLimit,

@@ -28,7 +28,6 @@ export interface GeminiToolSettings extends BaseToolSettings {
   model: string; // "gemini-2.5-pro" など
   approvalMode: "default" | "auto_edit" | "yolo";
   outputFormat: "text" | "json";
-  includeAllFiles: boolean;
   includeDirectories: string;
 }
 
@@ -86,7 +85,6 @@ export const DEFAULT_GEMINI_SETTINGS: GeminiToolSettings = {
   model: "",
   approvalMode: "default",
   outputFormat: "text",
-  includeAllFiles: false,
   includeDirectories: "",
   autoRetryOnRateLimit: false,
   useNewITermWindow: true,

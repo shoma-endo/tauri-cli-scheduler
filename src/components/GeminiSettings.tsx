@@ -117,40 +117,6 @@ export function GeminiSettings({
             </div>
           </div>
 
-          {/* コンテキスト設定 */}
-          <div className="p-3 bg-surface-subtle dark:bg-surface-dark-muted rounded-lg border border-surface-border dark:border-surface-dark-border">
-            <div className="text-sm font-medium text-text-primary dark:text-text-dark-primary mb-3">
-              コンテキスト設定
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-start">
-                <div className="flex items-center h-5">
-                  <input
-                    type="checkbox"
-                    id="includeAllFiles"
-                    checked={settings.includeAllFiles}
-                    onChange={(e) =>
-                      onSettingsChange({
-                        ...settings,
-                        includeAllFiles: e.target.checked,
-                      })
-                    }
-                    className="w-4 h-4 text-primary-DEFAULT bg-surface-base border-surface-border rounded focus:ring-2 focus:ring-primary-DEFAULT dark:bg-surface-dark-subtle dark:border-surface-dark-border transition-colors duration-200"
-                    disabled={isRunning}
-                  />
-                </div>
-                <div className="ml-2 text-sm">
-                  <label
-                    htmlFor="includeAllFiles"
-                    className="font-medium text-text-primary dark:text-text-dark-primary cursor-pointer select-none"
-                  >
-                    すべてのファイルを含める
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* 追加ディレクトリ */}
           <Input
             label="追加ディレクトリ（カンマ区切り）"
