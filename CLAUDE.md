@@ -40,6 +40,9 @@ cargo clippy           # Run Rust linter
 4. **Before Building**: Run `npm run build` to ensure frontend compiles without errors
 5. **Production Build**: Run `npm run tauri:build` (automatically updates version)
 6. **Code Quality**: Run `npm run fmt` and `npm run tauri:fmt` before committing
+7. **Build Output**: ビルド成功後、生成されたファイルのパスを必ず表示してください:
+   - DMG: `src-tauri/target/release/bundle/dmg/Tauri CLI Scheduler_<version>_aarch64.dmg`
+   - App: `src-tauri/target/release/bundle/macos/Tauri CLI Scheduler.app`
 
 ## Architecture
 
