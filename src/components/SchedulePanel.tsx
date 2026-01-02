@@ -39,10 +39,10 @@ export function SchedulePanel({
             d="M8 7V3m8 4V3m-9 8h10m5 0a2 2 0 01-2 2H7a2 2 0 01-2-2m14 0V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2z"
           />
         </svg>
-        <CardTitle>Schedule Management</CardTitle>
+        <CardTitle>スケジュール管理</CardTitle>
         {registeredSchedule && (
           <Badge variant="success">
-            Registered
+            登録済み
           </Badge>
         )}
       </CardHeader>

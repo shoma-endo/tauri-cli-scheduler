@@ -84,17 +84,6 @@ export function SettingsPanel({
         onCheckITermStatus={onCheckITermStatus}
       />
 
-      {/* スケジュール管理セクション */}
-      <SchedulePanel
-        tool={activeTab}
-        executionTime={executionTime}
-        targetDirectory={targetDirectory}
-        isRunning={isRunning}
-        registeredSchedule={registeredSchedule}
-        onScheduleRegister={onScheduleRegister}
-        onScheduleUnregister={onScheduleUnregister}
-      />
-
       {/* ツール固有設定セクション */}
       {activeTab === "claude" && (
         <ToolSettingsSection
@@ -179,6 +168,17 @@ export function SettingsPanel({
           />
         </ToolSettingsSection>
       )}
+
+      {/* スケジュール管理セクション */}
+      <SchedulePanel
+        tool={activeTab}
+        executionTime={executionTime}
+        targetDirectory={targetDirectory}
+        isRunning={isRunning}
+        registeredSchedule={registeredSchedule}
+        onScheduleRegister={onScheduleRegister}
+        onScheduleUnregister={onScheduleUnregister}
+      />
     </div>
   );
 }
