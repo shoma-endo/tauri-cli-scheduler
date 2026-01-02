@@ -1,6 +1,6 @@
 import { ClaudeToolSettings } from "../types/tools";
 import { Select } from "./ui/Select";
-import { Input } from "./ui/Input";
+import { Textarea } from "./ui/Input";
 
 interface ClaudeSettingsProps {
   settings: ClaudeToolSettings;
@@ -66,15 +66,15 @@ export function ClaudeSettings({
       )}
 
       {/* Claude Codeで実行する命令 */}
-      <Input
+      <Textarea
         label="Claude Code 命令"
-        type="text"
         value={settings.command}
         onChange={(e) =>
           onSettingsChange({ ...settings, command: e.target.value })
         }
         disabled={isRunning}
         placeholder="例: コード構造を分析してください"
+        rows={4}
       />
     </div>
   );

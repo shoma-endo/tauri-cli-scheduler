@@ -1,6 +1,6 @@
 import { GeminiToolSettings } from "../types/tools";
 import { Select } from "./ui/Select";
-import { Input } from "./ui/Input";
+import { Input, Textarea } from "./ui/Input";
 
 interface GeminiSettingsProps {
   settings: GeminiToolSettings;
@@ -152,15 +152,15 @@ export function GeminiSettings({
       )}
 
       {/* Geminiで実行する命令 */}
-      <Input
+      <Textarea
         label="Gemini 命令"
-        type="text"
         value={settings.command}
         onChange={(e) =>
           onSettingsChange({ ...settings, command: e.target.value })
         }
         disabled={isRunning}
         placeholder="例: コード構造を分析してください"
+        rows={4}
       />
     </div>
   );
