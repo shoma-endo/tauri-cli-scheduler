@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Tauri CLI Scheduler",
-  "version": "26.1.3",
+  "version": "26.1.4",
   "identifier": "com.tauri-cli-scheduler.app",
   "build": {
     "beforeDevCommand": "npm run dev",

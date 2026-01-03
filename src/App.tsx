@@ -163,6 +163,10 @@ function App() {
     codex: null,
     gemini: null,
   });
+  const [activeExecution, setActiveExecution] = useState<{
+    tool: ToolType;
+    settings: ClaudeToolSettings | CodexToolSettings | GeminiToolSettings;
+  } | null>(null);
 
   // 現在のタブの設定を取得
   const currentSettings = (() => {
@@ -179,6 +183,14 @@ function App() {
   })();
 
   const activeToolName = TOOL_DISPLAY_NAMES[appSettings.activeTab];
+  const runningToolName = activeExecution
+    ? TOOL_DISPLAY_NAMES[activeExecution.tool]
+    : activeToolName;
+  const executionTime =
+    activeExecution?.settings.executionTime ?? currentSettings.executionTime;
+  const autoRetryOnRateLimit =
+    activeExecution?.settings.autoRetryOnRateLimit ??
+    currentSettings.autoRetryOnRateLimit;
 
   // 設定をlocalStorageに保存
   useEffect(() => {
@@ -190,9 +202,9 @@ function App() {
     const unlisten = listen("execution-started", () => {
       setExecutionPhase("checking");
       setStatus(
-        currentSettings.autoRetryOnRateLimit
-          ? `${activeToolName} 実行中 - Rate limit監視中...`
-          : `${activeToolName} 動作ステータス取得待機中`,
+        autoRetryOnRateLimit
+          ? `${runningToolName} 実行中 - Rate limit監視中...`
+          : `${runningToolName} 動作ステータス取得待機中`,
       );
       setCheckingStartTime(new Date().getTime());
     });
@@ -200,7 +212,7 @@ function App() {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [appSettings.activeTab, currentSettings.autoRetryOnRateLimit]);
+  }, [autoRetryOnRateLimit, runningToolName]);
 
   // ターミナル出力をリッスン
   useEffect(() => {
@@ -282,7 +294,7 @@ function App() {
       const now = new Date();
 
       if (executionPhase === "checking") {
-        if (currentSettings.autoRetryOnRateLimit) {
+        if (autoRetryOnRateLimit) {
           if (!checkingStartTime) {
             setCheckingStartTime(now.getTime());
           }
@@ -362,9 +374,7 @@ function App() {
           setCountdown(`${minutes}分 ${seconds}秒`);
         }
       } else if (executionPhase === "waiting" && isRunning) {
-        const [hours, minutes] = currentSettings.executionTime
-          .split(":")
-          .map(Number);
+        const [hours, minutes] = executionTime.split(":").map(Number);
         const target = new Date();
         target.setHours(hours, minutes, 0, 0);
 
@@ -394,8 +404,8 @@ function App() {
   }, [
     isRunning,
     executionPhase,
-    currentSettings.executionTime,
-    currentSettings.autoRetryOnRateLimit,
+    executionTime,
+    autoRetryOnRateLimit,
     executionStartTime,
     checkingStartTime,
     rescheduledTime,
@@ -434,8 +444,16 @@ function App() {
     try {
       let result: ExecutionResult;
 
-      if (appSettings.activeTab === "claude") {
-        const claudeSettings = appSettings.claude;
+      const executionTool = appSettings.activeTab;
+      let executionSettings:
+        | ClaudeToolSettings
+        | CodexToolSettings
+        | GeminiToolSettings;
+
+      if (executionTool === "claude") {
+        const claudeSettings = { ...appSettings.claude };
+        executionSettings = claudeSettings;
+        setActiveExecution({ tool: "claude", settings: claudeSettings });
         const claudeOptions: string[] = [];
         if (claudeSettings.model) {
           claudeOptions.push(`--model ${claudeSettings.model}`);
@@ -451,8 +469,10 @@ function App() {
           autoRetryOnRateLimit: claudeSettings.autoRetryOnRateLimit,
           useNewWindow: claudeSettings.useNewITermWindow,
         });
-      } else if (appSettings.activeTab === "codex") {
-        const codexSettings = appSettings.codex;
+      } else if (executionTool === "codex") {
+        const codexSettings = { ...appSettings.codex };
+        executionSettings = codexSettings;
+        setActiveExecution({ tool: "codex", settings: codexSettings });
         result = await invoke<ExecutionResult>("execute_codex_command", {
           executionTime: codexSettings.executionTime,
           targetDirectory: codexSettings.targetDirectory,
@@ -464,7 +484,9 @@ function App() {
           useNewWindow: codexSettings.useNewITermWindow,
         });
       } else {
-        const geminiSettings = appSettings.gemini;
+        const geminiSettings = { ...appSettings.gemini };
+        executionSettings = geminiSettings;
+        setActiveExecution({ tool: "gemini", settings: geminiSettings });
         result = await invoke<ExecutionResult>("execute_gemini_command", {
           executionTime: geminiSettings.executionTime,
           targetDirectory: geminiSettings.targetDirectory,
@@ -495,7 +517,7 @@ function App() {
         }
       } else if (result.status === "rate_limit_detected") {
         setStatus("Rate limitを検出したため終了しました");
-      } else if (currentSettings.autoRetryOnRateLimit) {
+      } else if (executionSettings.autoRetryOnRateLimit) {
         setStatus("監視を終了しました");
       } else {
         if (result.needsRetry) {
@@ -508,6 +530,7 @@ function App() {
       setStatus(`エラー: ${error}`);
     } finally {
       setIsRunning(false);
+      setActiveExecution(null);
       setExecutionPhase(null);
       setExecutionStartTime(null);
       setCheckingStartTime(null);
@@ -520,6 +543,7 @@ function App() {
     try {
       await invoke("stop_execution");
       setIsRunning(false);
+      setActiveExecution(null);
       setExecutionPhase(null);
       setExecutionStartTime(null);
       setCheckingStartTime(null);
@@ -571,9 +595,11 @@ function App() {
   // タブ変更ハンドラー
   function handleTabChange(tab: ToolType) {
     setAppSettings({ ...appSettings, activeTab: tab });
-    // ステータスをクリア
-    setStatus("");
-    setToolStatus("");
+    if (!isRunning) {
+      // ステータスをクリア
+      setStatus("");
+      setToolStatus("");
+    }
   }
 
   // Claude設定変更ハンドラー
@@ -712,7 +738,7 @@ function App() {
         <TabSelector
           activeTab={appSettings.activeTab}
           onTabChange={handleTabChange}
-          disabled={isRunning}
+          disabled={false}
         />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* 左列: 設定パネル（約65%） */}
@@ -724,7 +750,7 @@ function App() {
               autoRetryOnRateLimit={currentSettings.autoRetryOnRateLimit}
               iTermStatus={iTermStatus}
               checkingITerm={checkingITerm}
-              isRunning={isRunning}
+              isRunning={false}
               onExecutionTimeChange={handleExecutionTimeChange}
               onTargetDirectoryChange={handleTargetDirectoryChange}
               onUseNewITermWindowChange={handleUseNewITermWindowChange}
@@ -746,7 +772,7 @@ function App() {
           {/* 右列: 実行パネル（約35%） */}
           <div className="md:col-span-1">
             <ExecutionPanel
-              activeTab={appSettings.activeTab}
+              activeTab={activeExecution?.tool ?? appSettings.activeTab}
               isRunning={isRunning}
               countdown={countdown}
               status={status}
