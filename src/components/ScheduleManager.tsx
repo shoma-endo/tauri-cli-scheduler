@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { RegisteredSchedule, ScheduleResult } from "../types/schedule";
+import { Button } from "./ui/Button";
 
 interface ScheduleManagerProps {
   tool: string;
@@ -93,21 +94,25 @@ export function ScheduleManager({
 
         <div className="flex gap-2">
           {!registeredSchedule ? (
-            <button
+            <Button
+              variant="primary"
               onClick={handleRegisterSchedule}
               disabled={isRunning || isRegistering || !targetDirectory.trim()}
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 transition-colors"
+              isLoading={isRegistering}
+              className="flex-1"
             >
-              {isRegistering ? "登録中..." : "スケジュール登録"}
-            </button>
+              スケジュール登録
+            </Button>
           ) : (
-            <button
+            <Button
+              variant="danger"
               onClick={handleUnregisterSchedule}
               disabled={isRunning || isUnregistering}
-              className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 transition-colors"
+              isLoading={isUnregistering}
+              className="flex-1"
             >
-              {isUnregistering ? "削除中..." : "スケジュール削除"}
-            </button>
+              スケジュール削除
+            </Button>
           )}
         </div>
 
