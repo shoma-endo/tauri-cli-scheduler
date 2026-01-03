@@ -16,6 +16,7 @@ import {
   ExecutionResult,
   ITermStatus,
   ExecutionPhase,
+  RunningStatus,
   DEFAULT_CLAUDE_SETTINGS,
   DEFAULT_CODEX_SETTINGS,
   DEFAULT_GEMINI_SETTINGS,
@@ -142,20 +143,49 @@ function App() {
     };
   });
 
-  const [isRunning, setIsRunning] = useState(false);
-  const [countdown, setCountdown] = useState<string>("");
-  const [status, setStatus] = useState<string>("");
-  const [toolStatus, setToolStatus] = useState<string>("");
-  const [executionPhase, setExecutionPhase] = useState<ExecutionPhase>(null);
-  const [executionStartTime, setExecutionStartTime] = useState<number | null>(
-    null,
-  );
-  const [checkingStartTime, setCheckingStartTime] = useState<number | null>(
-    null,
-  );
+  // ツールごとの実行状態
+  const [runningStatus, setRunningStatus] = useState<RunningStatus>({
+    claude: false,
+    codex: false,
+    gemini: false,
+  });
+  const [countdown, setCountdown] = useState<Record<ToolType, string>>({
+    claude: "",
+    codex: "",
+    gemini: "",
+  });
+  const [status, setStatus] = useState<Record<ToolType, string>>({
+    claude: "",
+    codex: "",
+    gemini: "",
+  });
+  const [toolStatus, setToolStatus] = useState<Record<ToolType, string>>({
+    claude: "",
+    codex: "",
+    gemini: "",
+  });
+  const [executionPhase, setExecutionPhase] = useState<Record<ToolType, ExecutionPhase>>({
+    claude: null,
+    codex: null,
+    gemini: null,
+  });
+  const [executionStartTime, setExecutionStartTime] = useState<Record<ToolType, number | null>>({
+    claude: null,
+    codex: null,
+    gemini: null,
+  });
+  const [checkingStartTime, setCheckingStartTime] = useState<Record<ToolType, number | null>>({
+    claude: null,
+    codex: null,
+    gemini: null,
+  });
   const [iTermStatus, setITermStatus] = useState<ITermStatus | null>(null);
   const [checkingITerm, setCheckingITerm] = useState(false);
-  const [rescheduledTime, setRescheduledTime] = useState<string | null>(null);
+  const [rescheduledTime, setRescheduledTime] = useState<Record<ToolType, string | null>>({
+    claude: null,
+    codex: null,
+    gemini: null,
+  });
   const [registeredSchedules, setRegisteredSchedules] = useState<
     Record<ToolType, RegisteredSchedule | null>
   >({
@@ -163,10 +193,6 @@ function App() {
     codex: null,
     gemini: null,
   });
-  const [activeExecution, setActiveExecution] = useState<{
-    tool: ToolType;
-    settings: ClaudeToolSettings | CodexToolSettings | GeminiToolSettings;
-  } | null>(null);
 
   // 現在のタブの設定を取得
   const currentSettings = (() => {
@@ -182,47 +208,51 @@ function App() {
     }
   })();
 
-  const activeToolName = TOOL_DISPLAY_NAMES[appSettings.activeTab];
-  const runningToolName = activeExecution
-    ? TOOL_DISPLAY_NAMES[activeExecution.tool]
-    : activeToolName;
-  const executionTime =
-    activeExecution?.settings.executionTime ?? currentSettings.executionTime;
-  const autoRetryOnRateLimit =
-    activeExecution?.settings.autoRetryOnRateLimit ??
-    currentSettings.autoRetryOnRateLimit;
+  const activeTab = appSettings.activeTab;
+  const activeToolName = TOOL_DISPLAY_NAMES[activeTab];
+  const isCurrentTabRunning = runningStatus[activeTab];
 
   // 設定をlocalStorageに保存
   useEffect(() => {
     localStorage.setItem("cliRunnerSettings", JSON.stringify(appSettings));
   }, [appSettings]);
 
-  // 実行開始イベントをリッスン
+  // 実行開始イベントをリッスン（ツール情報付き）
   useEffect(() => {
-    const unlisten = listen("execution-started", () => {
-      setExecutionPhase("checking");
-      setStatus(
-        autoRetryOnRateLimit
-          ? `${runningToolName} 実行中 - Rate limit監視中...`
-          : `${runningToolName} 動作ステータス取得待機中`,
-      );
-      setCheckingStartTime(new Date().getTime());
+    const unlisten = listen<{ tool: ToolType }>("execution-started", (event) => {
+      const tool = event.payload?.tool || activeTab;
+      const toolName = TOOL_DISPLAY_NAMES[tool];
+      const autoRetry = appSettings[tool].autoRetryOnRateLimit;
+
+      setExecutionPhase((prev) => ({ ...prev, [tool]: "checking" }));
+      setStatus((prev) => ({
+        ...prev,
+        [tool]: autoRetry
+          ? `${toolName} 実行中 - Rate limit監視中...`
+          : `${toolName} 動作ステータス取得待機中`,
+      }));
+      setCheckingStartTime((prev) => ({ ...prev, [tool]: new Date().getTime() }));
     });
 
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [autoRetryOnRateLimit, runningToolName]);
+  }, [activeTab, appSettings]);
 
-  // ターミナル出力をリッスン
+  // ターミナル出力をリッスン（ツール情報付き）
   useEffect(() => {
-    const unlisten = listen<string>("terminal-output", (event) => {
-      setToolStatus(event.payload);
+    const unlisten = listen<{ tool: ToolType; output: string } | string>("terminal-output", (event) => {
+      // 後方互換性: 文字列のみの場合は現在のアクティブタブに適用
+      const payload = event.payload;
+      const tool = typeof payload === "object" ? payload.tool : activeTab;
+      const output = typeof payload === "object" ? payload.output : payload;
+
+      setToolStatus((prev) => ({ ...prev, [tool]: output }));
 
       // Rate limitを検出したときにステータスを更新
-      if (event.payload.includes("Rate limit detected")) {
-        const timeMatch = event.payload.match(/(\d{2}):01/);
-        const remainingMatch = event.payload.match(/残り約(\d+)分/);
+      if (output.includes("Rate limit detected")) {
+        const timeMatch = output.match(/(\d{2}):01/);
+        const remainingMatch = output.match(/残り約(\d+)分/);
 
         if (timeMatch && remainingMatch) {
           const scheduledTime = timeMatch[0];
@@ -230,42 +260,32 @@ function App() {
           const hours = Math.floor(remainingMinutes / 60);
           const minutes = remainingMinutes % 60;
 
-          if (hours > 0) {
-            setStatus(
-              `Rate limit検出 - ${scheduledTime}に再実行予定 (残り約${hours}時間${minutes}分)`,
-            );
-          } else {
-            setStatus(
-              `Rate limit検出 - ${scheduledTime}に再実行予定 (残り約${minutes}分)`,
-            );
-          }
+          const statusMsg = hours > 0
+            ? `Rate limit検出 - ${scheduledTime}に再実行予定 (残り約${hours}時間${minutes}分)`
+            : `Rate limit検出 - ${scheduledTime}に再実行予定 (残り約${minutes}分)`;
+          setStatus((prev) => ({ ...prev, [tool]: statusMsg }));
         }
       } else if (
-        event.payload.includes("Claude usage limit reached") ||
-        /rate limit/i.test(event.payload) ||
-        event.payload.includes("RESOURCE_EXHAUSTED") ||
-        /quota/i.test(event.payload)
+        output.includes("Claude usage limit reached") ||
+        /rate limit/i.test(output) ||
+        output.includes("RESOURCE_EXHAUSTED") ||
+        /quota/i.test(output)
       ) {
-        const resetMatch = event.payload.match(/reset at (\d+(?:am|pm))/i);
+        const resetMatch = output.match(/reset at (\d+(?:am|pm))/i);
         const resetTime = resetMatch ? resetMatch[1] : "指定時刻";
 
-        const timeMatch = event.payload.match(/残り約(\d+)分/);
+        const timeMatch = output.match(/残り約(\d+)分/);
         if (timeMatch) {
           const remainingMinutes = parseInt(timeMatch[1]);
           const hours = Math.floor(remainingMinutes / 60);
           const minutes = remainingMinutes % 60;
 
-          if (hours > 0) {
-            setStatus(
-              `Rate limit検出 - ${resetTime}まで待機中 (残り約${hours}時間${minutes}分)`,
-            );
-          } else {
-            setStatus(
-              `Rate limit検出 - ${resetTime}まで待機中 (残り約${minutes}分)`,
-            );
-          }
+          const statusMsg = hours > 0
+            ? `Rate limit検出 - ${resetTime}まで待機中 (残り約${hours}時間${minutes}分)`
+            : `Rate limit検出 - ${resetTime}まで待機中 (残り約${minutes}分)`;
+          setStatus((prev) => ({ ...prev, [tool]: statusMsg }));
         } else {
-          setStatus(`Rate limit検出 - ${resetTime}まで待機中...`);
+          setStatus((prev) => ({ ...prev, [tool]: `Rate limit検出 - ${resetTime}まで待機中...` }));
         }
       }
     });
@@ -273,187 +293,176 @@ function App() {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, []);
+  }, [activeTab]);
 
-  // Rate limitリトライスケジュールをリッスン
+  // Rate limitリトライスケジュールをリッスン（ツール情報付き）
   useEffect(() => {
-    const unlisten = listen<string>("rate-limit-retry-scheduled", (event) => {
-      setRescheduledTime(event.payload);
+    const unlisten = listen<{ tool: ToolType; time: string } | string>("rate-limit-retry-scheduled", (event) => {
+      const payload = event.payload;
+      const tool = typeof payload === "object" ? payload.tool : activeTab;
+      const time = typeof payload === "object" ? payload.time : payload;
+      setRescheduledTime((prev) => ({ ...prev, [tool]: time }));
     });
 
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, []);
+  }, [activeTab]);
 
-  // カウントダウンタイマー
+  // カウントダウンタイマー（各ツールごと）
   useEffect(() => {
-    if (!isRunning) return;
+    // 実行中のツールがあるかチェック
+    const hasRunningTool = Object.values(runningStatus).some(Boolean);
+    if (!hasRunningTool) return;
 
     const intervalId = setInterval(() => {
       const now = new Date();
 
-      if (executionPhase === "checking") {
-        if (autoRetryOnRateLimit) {
-          if (!checkingStartTime) {
-            setCheckingStartTime(now.getTime());
-          }
+      // 各ツールのカウントダウンを更新
+      (["claude", "codex", "gemini"] as ToolType[]).forEach((tool) => {
+        if (!runningStatus[tool]) return;
 
-          if (toolStatus.includes("Rate limit detected") && rescheduledTime) {
-            const [hours, minutes] = rescheduledTime.split(":").map(Number);
-            const target = new Date();
-            target.setHours(hours, minutes, 0, 0);
+        const phase = executionPhase[tool];
+        const autoRetry = appSettings[tool].autoRetryOnRateLimit;
+        const toolStatusVal = toolStatus[tool];
+        const reschedTime = rescheduledTime[tool];
+        const checkStart = checkingStartTime[tool];
+        const execStart = executionStartTime[tool];
+        const execTime = appSettings[tool].executionTime;
 
-            if (target.getTime() <= now.getTime()) {
-              target.setDate(target.getDate() + 1);
+        if (phase === "checking") {
+          if (autoRetry) {
+            if (!checkStart) {
+              setCheckingStartTime((prev) => ({ ...prev, [tool]: now.getTime() }));
             }
 
-            const distance = target.getTime() - now.getTime();
-            const countdownHours = Math.floor(
-              (distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
-            );
-            const countdownMinutes = Math.floor(
-              (distance % (1000 * 60 * 60)) / (1000 * 60),
-            );
-            const countdownSeconds = Math.floor(
-              (distance % (1000 * 60)) / 1000,
-            );
-            setCountdown(
-              `${countdownHours}時間 ${countdownMinutes}分 ${countdownSeconds}秒`,
-            );
-          } else if (
-            toolStatus.includes("Claude usage limit reached") ||
-            /rate limit/i.test(toolStatus) ||
-            toolStatus.includes("RESOURCE_EXHAUSTED") ||
-            /quota/i.test(toolStatus)
-          ) {
-            const resetMatch = toolStatus.match(/reset at (\d+(?:am|pm))/i);
-            const resetTime = resetMatch ? resetMatch[1] : "指定時刻";
+            if (toolStatusVal.includes("Rate limit detected") && reschedTime) {
+              const [hours, minutes] = reschedTime.split(":").map(Number);
+              const target = new Date();
+              target.setHours(hours, minutes, 0, 0);
 
-            if (toolStatus.includes("Rate limit:")) {
-              const timeMatch = toolStatus.match(/残り約(\d+)分/);
-              if (timeMatch) {
-                const remainingMinutes = parseInt(timeMatch[1]);
-                const hours = Math.floor(remainingMinutes / 60);
-                const minutes = remainingMinutes % 60;
-                const seconds = 0;
-                setCountdown(`${hours}時間 ${minutes}分 ${seconds}秒`);
+              if (target.getTime() <= now.getTime()) {
+                target.setDate(target.getDate() + 1);
+              }
+
+              const distance = target.getTime() - now.getTime();
+              const countdownHours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+              const countdownMinutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+              const countdownSeconds = Math.floor((distance % (1000 * 60)) / 1000);
+              setCountdown((prev) => ({
+                ...prev,
+                [tool]: `${countdownHours}時間 ${countdownMinutes}分 ${countdownSeconds}秒`,
+              }));
+            } else if (
+              toolStatusVal.includes("Claude usage limit reached") ||
+              /rate limit/i.test(toolStatusVal) ||
+              toolStatusVal.includes("RESOURCE_EXHAUSTED") ||
+              /quota/i.test(toolStatusVal)
+            ) {
+              const resetMatch = toolStatusVal.match(/reset at (\d+(?:am|pm))/i);
+              const resetTime = resetMatch ? resetMatch[1] : "指定時刻";
+
+              if (toolStatusVal.includes("Rate limit:")) {
+                const timeMatch = toolStatusVal.match(/残り約(\d+)分/);
+                if (timeMatch) {
+                  const remainingMinutes = parseInt(timeMatch[1]);
+                  const hours = Math.floor(remainingMinutes / 60);
+                  const minutes = remainingMinutes % 60;
+                  setCountdown((prev) => ({ ...prev, [tool]: `${hours}時間 ${minutes}分 0秒` }));
+                } else {
+                  setCountdown((prev) => ({ ...prev, [tool]: `${resetTime}まで待機中...` }));
+                }
               } else {
-                setCountdown(`${resetTime}まで待機中...`);
+                setCountdown((prev) => ({ ...prev, [tool]: `${resetTime}まで待機中...` }));
               }
             } else {
-              setCountdown(`${resetTime}まで待機中...`);
+              const elapsedSeconds = Math.floor((now.getTime() - (checkStart || now.getTime())) / 1000);
+              const currentCycleSeconds = elapsedSeconds % 60;
+              const remainingSeconds = 60 - currentCycleSeconds;
+              setCountdown((prev) => ({ ...prev, [tool]: `次の確認まで: ${remainingSeconds}秒` }));
             }
           } else {
-            const elapsedSeconds = Math.floor(
-              (now.getTime() - (checkingStartTime || now.getTime())) / 1000,
-            );
-            const currentCycleSeconds = elapsedSeconds % 60;
-            const remainingSeconds = 60 - currentCycleSeconds;
+            if (!checkStart) {
+              setCheckingStartTime((prev) => ({ ...prev, [tool]: now.getTime() }));
+              return;
+            }
 
-            setCountdown(`次の確認まで: ${remainingSeconds}秒`);
+            const elapsedSeconds = Math.floor((now.getTime() - checkStart) / 1000);
+            const remainingSeconds = Math.max(0, 120 - elapsedSeconds);
+
+            if (remainingSeconds <= 0) {
+              setCountdown((prev) => ({ ...prev, [tool]: "待機完了" }));
+              return;
+            }
+
+            const minutes = Math.floor(remainingSeconds / 60);
+            const seconds = remainingSeconds % 60;
+            setCountdown((prev) => ({ ...prev, [tool]: `${minutes}分 ${seconds}秒` }));
           }
-        } else {
-          if (!checkingStartTime) {
-            setCheckingStartTime(now.getTime());
-            return;
+        } else if (phase === "waiting") {
+          const [hours, minutes] = execTime.split(":").map(Number);
+          const target = new Date();
+          target.setHours(hours, minutes, 0, 0);
+
+          if (!execStart && target.getTime() <= now.getTime()) {
+            target.setDate(target.getDate() + 1);
           }
 
-          const elapsedSeconds = Math.floor(
-            (now.getTime() - checkingStartTime) / 1000,
-          );
-          const remainingSeconds = Math.max(0, 120 - elapsedSeconds);
+          const distance = target.getTime() - now.getTime();
 
-          if (remainingSeconds <= 0) {
-            setCountdown("待機完了");
-            return;
+          if (distance <= 0) {
+            setCountdown((prev) => ({ ...prev, [tool]: "実行中..." }));
+            setExecutionStartTime((prev) => ({ ...prev, [tool]: now.getTime() }));
+          } else {
+            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+            setCountdown((prev) => ({ ...prev, [tool]: `${hours}時間 ${minutes}分 ${seconds}秒` }));
           }
-
-          const minutes = Math.floor(remainingSeconds / 60);
-          const seconds = remainingSeconds % 60;
-          setCountdown(`${minutes}分 ${seconds}秒`);
         }
-      } else if (executionPhase === "waiting" && isRunning) {
-        const [hours, minutes] = executionTime.split(":").map(Number);
-        const target = new Date();
-        target.setHours(hours, minutes, 0, 0);
-
-        if (!executionStartTime && target.getTime() <= now.getTime()) {
-          target.setDate(target.getDate() + 1);
-        }
-
-        const distance = target.getTime() - now.getTime();
-
-        if (distance <= 0) {
-          setCountdown("実行中...");
-          setExecutionStartTime(now.getTime());
-        } else {
-          const hours = Math.floor(
-            (distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
-          );
-          const minutes = Math.floor(
-            (distance % (1000 * 60 * 60)) / (1000 * 60),
-          );
-          const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-          setCountdown(`${hours}時間 ${minutes}分 ${seconds}秒`);
-        }
-      }
+      });
     }, 1000);
 
     return () => clearInterval(intervalId);
-  }, [
-    isRunning,
-    executionPhase,
-    executionTime,
-    autoRetryOnRateLimit,
-    executionStartTime,
-    checkingStartTime,
-    rescheduledTime,
-    toolStatus,
-  ]);
+  }, [runningStatus, executionPhase, appSettings, executionStartTime, checkingStartTime, rescheduledTime, toolStatus]);
 
   async function startExecution() {
+    const tool = activeTab;
+
     if (!iTermStatus?.is_installed) {
-      setStatus("エラー: iTermがインストールされていません");
+      setStatus((prev) => ({ ...prev, [tool]: "エラー: iTermがインストールされていません" }));
       return;
     }
 
     if (!currentSettings.command.trim()) {
-      setStatus(
-        `エラー: ${activeToolName}で実行する命令を入力してください`,
-      );
+      setStatus((prev) => ({
+        ...prev,
+        [tool]: `エラー: ${activeToolName}で実行する命令を入力してください`,
+      }));
       return;
     }
 
-    if (
-      currentSettings.useNewITermWindow &&
-      !currentSettings.targetDirectory.trim()
-    ) {
-      setStatus("エラー: 実行対象ディレクトリを選択してください");
+    if (currentSettings.useNewITermWindow && !currentSettings.targetDirectory.trim()) {
+      setStatus((prev) => ({ ...prev, [tool]: "エラー: 実行対象ディレクトリを選択してください" }));
       return;
     }
 
-    setIsRunning(true);
-    setStatus("待機中...");
-    setToolStatus("");
-    setExecutionPhase("waiting");
-    setExecutionStartTime(null);
-    setCheckingStartTime(null);
-    setRescheduledTime(null);
+    // ツールの実行状態を更新
+    setRunningStatus((prev) => ({ ...prev, [tool]: true }));
+    setStatus((prev) => ({ ...prev, [tool]: "待機中..." }));
+    setToolStatus((prev) => ({ ...prev, [tool]: "" }));
+    setExecutionPhase((prev) => ({ ...prev, [tool]: "waiting" }));
+    setExecutionStartTime((prev) => ({ ...prev, [tool]: null }));
+    setCheckingStartTime((prev) => ({ ...prev, [tool]: null }));
+    setRescheduledTime((prev) => ({ ...prev, [tool]: null }));
 
     try {
       let result: ExecutionResult;
+      let executionSettings: ClaudeToolSettings | CodexToolSettings | GeminiToolSettings;
 
-      const executionTool = appSettings.activeTab;
-      let executionSettings:
-        | ClaudeToolSettings
-        | CodexToolSettings
-        | GeminiToolSettings;
-
-      if (executionTool === "claude") {
+      if (tool === "claude") {
         const claudeSettings = { ...appSettings.claude };
         executionSettings = claudeSettings;
-        setActiveExecution({ tool: "claude", settings: claudeSettings });
         const claudeOptions: string[] = [];
         if (claudeSettings.model) {
           claudeOptions.push(`--model ${claudeSettings.model}`);
@@ -469,10 +478,9 @@ function App() {
           autoRetryOnRateLimit: claudeSettings.autoRetryOnRateLimit,
           useNewWindow: claudeSettings.useNewITermWindow,
         });
-      } else if (executionTool === "codex") {
+      } else if (tool === "codex") {
         const codexSettings = { ...appSettings.codex };
         executionSettings = codexSettings;
-        setActiveExecution({ tool: "codex", settings: codexSettings });
         result = await invoke<ExecutionResult>("execute_codex_command", {
           executionTime: codexSettings.executionTime,
           targetDirectory: codexSettings.targetDirectory,
@@ -486,7 +494,6 @@ function App() {
       } else {
         const geminiSettings = { ...appSettings.gemini };
         executionSettings = geminiSettings;
-        setActiveExecution({ tool: "gemini", settings: geminiSettings });
         result = await invoke<ExecutionResult>("execute_gemini_command", {
           executionTime: geminiSettings.executionTime,
           targetDirectory: geminiSettings.targetDirectory,
@@ -501,56 +508,51 @@ function App() {
       }
 
       if (result.terminalOutput) {
-        setToolStatus(result.terminalOutput);
+        setToolStatus((prev) => ({ ...prev, [tool]: result.terminalOutput! }));
       }
 
+      let finalStatus: string;
       if (result.status === "cancelled") {
-        setStatus("実行を中止しました");
+        finalStatus = "実行を中止しました";
       } else if (result.status && result.status.startsWith("completed_in_")) {
         const timeMatch = result.status.match(/completed_in_(\d+)m(\d+)s/);
         if (timeMatch) {
-          const minutes = timeMatch[1];
-          const seconds = timeMatch[2];
-          setStatus(`処理完了 (処理時間: ${minutes}分${seconds}秒)`);
+          finalStatus = `処理完了 (処理時間: ${timeMatch[1]}分${timeMatch[2]}秒)`;
         } else {
-          setStatus("処理完了");
+          finalStatus = "処理完了";
         }
       } else if (result.status === "rate_limit_detected") {
-        setStatus("Rate limitを検出したため終了しました");
+        finalStatus = "Rate limitを検出したため終了しました";
       } else if (executionSettings.autoRetryOnRateLimit) {
-        setStatus("監視を終了しました");
+        finalStatus = "監視を終了しました";
       } else {
-        if (result.needsRetry) {
-          setStatus(`実行完了 - ${result.retryTime}に再実行予定`);
-        } else {
-          setStatus("実行完了");
-        }
+        finalStatus = result.needsRetry ? `実行完了 - ${result.retryTime}に再実行予定` : "実行完了";
       }
+      setStatus((prev) => ({ ...prev, [tool]: finalStatus }));
     } catch (error) {
-      setStatus(`エラー: ${error}`);
+      setStatus((prev) => ({ ...prev, [tool]: `エラー: ${error}` }));
     } finally {
-      setIsRunning(false);
-      setActiveExecution(null);
-      setExecutionPhase(null);
-      setExecutionStartTime(null);
-      setCheckingStartTime(null);
-      setRescheduledTime(null);
-      setCountdown("");
+      setRunningStatus((prev) => ({ ...prev, [tool]: false }));
+      setExecutionPhase((prev) => ({ ...prev, [tool]: null }));
+      setExecutionStartTime((prev) => ({ ...prev, [tool]: null }));
+      setCheckingStartTime((prev) => ({ ...prev, [tool]: null }));
+      setRescheduledTime((prev) => ({ ...prev, [tool]: null }));
+      setCountdown((prev) => ({ ...prev, [tool]: "" }));
     }
   }
 
   async function stopExecution() {
+    const tool = activeTab;
     try {
-      await invoke("stop_execution");
-      setIsRunning(false);
-      setActiveExecution(null);
-      setExecutionPhase(null);
-      setExecutionStartTime(null);
-      setCheckingStartTime(null);
-      setRescheduledTime(null);
-      setStatus("実行を中止しました");
+      await invoke("stop_execution", { tool });
+      setRunningStatus((prev) => ({ ...prev, [tool]: false }));
+      setExecutionPhase((prev) => ({ ...prev, [tool]: null }));
+      setExecutionStartTime((prev) => ({ ...prev, [tool]: null }));
+      setCheckingStartTime((prev) => ({ ...prev, [tool]: null }));
+      setRescheduledTime((prev) => ({ ...prev, [tool]: null }));
+      setStatus((prev) => ({ ...prev, [tool]: "実行を中止しました" }));
     } catch (error) {
-      setStatus(`停止エラー: ${error}`);
+      setStatus((prev) => ({ ...prev, [tool]: `停止エラー: ${error}` }));
     }
   }
 
@@ -561,7 +563,7 @@ function App() {
       setITermStatus(status);
     } catch (error) {
       console.error("Failed to check iTerm status:", error);
-      setStatus(`iTerm状態確認エラー: ${error}`);
+      setStatus((prev) => ({ ...prev, [activeTab]: `iTerm状態確認エラー: ${error}` }));
     } finally {
       setCheckingITerm(false);
     }
@@ -595,10 +597,10 @@ function App() {
   // タブ変更ハンドラー
   function handleTabChange(tab: ToolType) {
     setAppSettings({ ...appSettings, activeTab: tab });
-    if (!isRunning) {
-      // ステータスをクリア
-      setStatus("");
-      setToolStatus("");
+    // 実行中でない場合のみステータスをクリア
+    if (!runningStatus[tab]) {
+      setStatus((prev) => ({ ...prev, [tab]: "" }));
+      setToolStatus((prev) => ({ ...prev, [tab]: "" }));
     }
   }
 
@@ -703,31 +705,33 @@ function App() {
   }
 
   function handleScheduleRegister(success: boolean) {
+    const tool = appSettings.activeTab;
     if (success) {
       // Update local state
       const updated = { ...registeredSchedules };
       const schedule: RegisteredSchedule = {
-        tool: appSettings.activeTab,
+        tool,
         execution_time: currentSettings.executionTime,
         created_at: new Date().toISOString(),
       };
-      updated[appSettings.activeTab] = schedule;
+      updated[tool] = schedule;
       setRegisteredSchedules(updated);
-      setStatus("スケジュール登録成功: Launchdに登録しました");
+      setStatus((prev) => ({ ...prev, [tool]: "スケジュール登録成功: Launchdに登録しました" }));
     } else {
-      setStatus("スケジュール登録失敗");
+      setStatus((prev) => ({ ...prev, [tool]: "スケジュール登録失敗" }));
     }
   }
 
   function handleScheduleUnregister(success: boolean) {
+    const tool = appSettings.activeTab;
     if (success) {
       // Update local state
       const updated = { ...registeredSchedules };
-      updated[appSettings.activeTab] = null;
+      updated[tool] = null;
       setRegisteredSchedules(updated);
-      setStatus("スケジュール削除成功");
+      setStatus((prev) => ({ ...prev, [tool]: "スケジュール削除成功" }));
     } else {
-      setStatus("スケジュール削除失敗");
+      setStatus((prev) => ({ ...prev, [tool]: "スケジュール削除失敗" }));
     }
   }
 
@@ -739,6 +743,7 @@ function App() {
           activeTab={appSettings.activeTab}
           onTabChange={handleTabChange}
           disabled={false}
+          runningStatus={runningStatus}
         />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* 左列: 設定パネル（約65%） */}
@@ -772,11 +777,11 @@ function App() {
           {/* 右列: 実行パネル（約35%） */}
           <div className="md:col-span-1">
             <ExecutionPanel
-              activeTab={activeExecution?.tool ?? appSettings.activeTab}
-              isRunning={isRunning}
-              countdown={countdown}
-              status={status}
-              toolStatus={toolStatus}
+              activeTab={activeTab}
+              isRunning={isCurrentTabRunning}
+              countdown={countdown[activeTab]}
+              status={status[activeTab]}
+              toolStatus={toolStatus[activeTab]}
               iTermStatus={iTermStatus}
               onStart={startExecution}
               onStop={stopExecution}

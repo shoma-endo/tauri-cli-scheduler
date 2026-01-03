@@ -9,9 +9,15 @@ use tokio::time::sleep;
 mod plist_manager;
 use plist_manager::{LaunchdConfig, RegisteredSchedule};
 
-struct AppState {
+struct ToolState {
     is_running: Arc<Mutex<bool>>,
     cancel_flag: Arc<Mutex<bool>>,
+}
+
+struct AppState {
+    claude: ToolState,
+    codex: ToolState,
+    gemini: ToolState,
 }
 
 fn escape_applescript_string(input: &str) -> String {
@@ -102,13 +108,13 @@ async fn execute_claude_command(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ExecutionResult, String> {
-    let is_running_clone = state.is_running.clone();
-    let cancel_flag_clone = state.cancel_flag.clone();
+    let is_running_clone = state.claude.is_running.clone();
+    let cancel_flag_clone = state.claude.cancel_flag.clone();
 
     {
         let mut is_running = is_running_clone.lock().unwrap();
         if *is_running {
-            return Err("コマンドは既に実行中です".to_string());
+            return Err("Claude Codeは既に実行中です".to_string());
         }
         *is_running = true;
 
@@ -203,7 +209,7 @@ async fn execute_claude_command(
         auto_retry_on_rate_limit,
         use_new_window,
         &app,
-        &state,
+        cancel_flag_clone.clone(),
     )
     .await;
 
@@ -220,7 +226,7 @@ async fn execute_applescript(
     auto_retry_on_rate_limit: bool,
     use_new_window: bool,
     app: &tauri::AppHandle,
-    state: &State<'_, AppState>,
+    cancel_flag: Arc<Mutex<bool>>,
 ) -> Result<ExecutionResult, String> {
     execute_applescript_internal(
         target_directory,
@@ -241,8 +247,8 @@ async fn execute_applescript(
         loop {
             // Check if cancelled
             {
-                let cancel_flag = state.cancel_flag.lock().unwrap();
-                if *cancel_flag {
+                let cancel = cancel_flag.lock().unwrap();
+                if *cancel {
                     return Ok(ExecutionResult {
                         status: "cancelled".to_string(),
                         terminal_output: None,
@@ -377,8 +383,8 @@ async fn execute_applescript(
 
                     while waited < total_wait {
                         {
-                            let cancel_flag = state.cancel_flag.lock().unwrap();
-                            if *cancel_flag {
+                            let cancel = cancel_flag.lock().unwrap();
+                            if *cancel {
                                 return Ok(ExecutionResult {
                                     status: "cancelled".to_string(),
                                     terminal_output: None,
@@ -430,8 +436,8 @@ async fn execute_applescript(
         loop {
             // Check if cancelled
             {
-                let cancel_flag = state.cancel_flag.lock().unwrap();
-                if *cancel_flag {
+                let cancel = cancel_flag.lock().unwrap();
+                if *cancel {
                     return Ok(ExecutionResult {
                         status: "cancelled".to_string(),
                         terminal_output: None,
@@ -680,13 +686,13 @@ async fn execute_codex_command(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ExecutionResult, String> {
-    let is_running_clone = state.is_running.clone();
-    let cancel_flag_clone = state.cancel_flag.clone();
+    let is_running_clone = state.codex.is_running.clone();
+    let cancel_flag_clone = state.codex.cancel_flag.clone();
 
     {
         let mut is_running = is_running_clone.lock().unwrap();
         if *is_running {
-            return Err("コマンドは既に実行中です".to_string());
+            return Err("Codexは既に実行中です".to_string());
         }
         *is_running = true;
 
@@ -783,7 +789,7 @@ async fn execute_codex_command(
         auto_retry_on_rate_limit,
         use_new_window,
         &app,
-        &state,
+        cancel_flag_clone.clone(),
     )
     .await;
 
@@ -802,7 +808,7 @@ async fn execute_codex_applescript(
     auto_retry_on_rate_limit: bool,
     use_new_window: bool,
     app: &tauri::AppHandle,
-    state: &State<'_, AppState>,
+    cancel_flag: Arc<Mutex<bool>>,
 ) -> Result<ExecutionResult, String> {
     execute_codex_applescript_internal(
         target_directory,
@@ -825,8 +831,8 @@ async fn execute_codex_applescript(
         loop {
             // Check if cancelled
             {
-                let cancel_flag = state.cancel_flag.lock().unwrap();
-                if *cancel_flag {
+                let cancel = cancel_flag.lock().unwrap();
+                if *cancel {
                     return Ok(ExecutionResult {
                         status: "cancelled".to_string(),
                         terminal_output: None,
@@ -946,8 +952,8 @@ async fn execute_codex_applescript(
 
                     while waited < total_wait {
                         {
-                            let cancel_flag = state.cancel_flag.lock().unwrap();
-                            if *cancel_flag {
+                            let cancel = cancel_flag.lock().unwrap();
+                            if *cancel {
                                 return Ok(ExecutionResult {
                                     status: "cancelled".to_string(),
                                     terminal_output: None,
@@ -991,8 +997,8 @@ async fn execute_codex_applescript(
 
         loop {
             {
-                let cancel_flag = state.cancel_flag.lock().unwrap();
-                if *cancel_flag {
+                let cancel = cancel_flag.lock().unwrap();
+                if *cancel {
                     return Ok(ExecutionResult {
                         status: "cancelled".to_string(),
                         terminal_output: None,
@@ -1196,13 +1202,13 @@ async fn execute_gemini_command(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ExecutionResult, String> {
-    let is_running_clone = state.is_running.clone();
-    let cancel_flag_clone = state.cancel_flag.clone();
+    let is_running_clone = state.gemini.is_running.clone();
+    let cancel_flag_clone = state.gemini.cancel_flag.clone();
 
     {
         let mut is_running = is_running_clone.lock().unwrap();
         if *is_running {
-            return Err("コマンドは既に実行中です".to_string());
+            return Err("Gemini CLIは既に実行中です".to_string());
         }
         *is_running = true;
 
@@ -1300,7 +1306,7 @@ async fn execute_gemini_command(
         auto_retry_on_rate_limit,
         use_new_window,
         &app,
-        &state,
+        cancel_flag_clone.clone(),
     )
     .await;
 
@@ -1320,7 +1326,7 @@ async fn execute_gemini_applescript(
     auto_retry_on_rate_limit: bool,
     use_new_window: bool,
     app: &tauri::AppHandle,
-    state: &State<'_, AppState>,
+    cancel_flag: Arc<Mutex<bool>>,
 ) -> Result<ExecutionResult, String> {
     execute_gemini_applescript_internal(
         target_directory,
@@ -1342,8 +1348,8 @@ async fn execute_gemini_applescript(
 
         loop {
             {
-                let cancel_flag = state.cancel_flag.lock().unwrap();
-                if *cancel_flag {
+                let cancel = cancel_flag.lock().unwrap();
+                if *cancel {
                     return Ok(ExecutionResult {
                         status: "cancelled".to_string(),
                         terminal_output: None,
@@ -1452,8 +1458,8 @@ async fn execute_gemini_applescript(
 
                     while waited < total_wait {
                         {
-                            let cancel_flag = state.cancel_flag.lock().unwrap();
-                            if *cancel_flag {
+                            let cancel = cancel_flag.lock().unwrap();
+                            if *cancel {
                                 return Ok(ExecutionResult {
                                     status: "cancelled".to_string(),
                                     terminal_output: None,
@@ -1491,8 +1497,8 @@ async fn execute_gemini_applescript(
 
         loop {
             {
-                let cancel_flag = state.cancel_flag.lock().unwrap();
-                if *cancel_flag {
+                let cancel = cancel_flag.lock().unwrap();
+                if *cancel {
                     return Ok(ExecutionResult {
                         status: "cancelled".to_string(),
                         terminal_output: None,
@@ -1680,12 +1686,28 @@ end tell
 }
 
 #[tauri::command]
-fn stop_execution(state: State<'_, AppState>) -> Result<String, String> {
-    let mut is_running = state.is_running.lock().unwrap();
-    let mut cancel_flag = state.cancel_flag.lock().unwrap();
+fn stop_execution(tool: String, state: State<'_, AppState>) -> Result<String, String> {
+    let tool_state = match tool.as_str() {
+        "claude" => &state.claude,
+        "codex" => &state.codex,
+        "gemini" => &state.gemini,
+        _ => return Err("無効なツール指定です".to_string()),
+    };
+
+    let mut is_running = tool_state.is_running.lock().unwrap();
+    let mut cancel_flag = tool_state.cancel_flag.lock().unwrap();
     *is_running = false;
     *cancel_flag = true;
-    Ok("実行を停止しました".to_string())
+    Ok(format!("{}の実行を停止しました", tool))
+}
+
+#[tauri::command]
+fn get_running_status(state: State<'_, AppState>) -> Result<std::collections::HashMap<String, bool>, String> {
+    let mut status = std::collections::HashMap::new();
+    status.insert("claude".to_string(), *state.claude.is_running.lock().unwrap());
+    status.insert("codex".to_string(), *state.codex.is_running.lock().unwrap());
+    status.insert("gemini".to_string(), *state.gemini.is_running.lock().unwrap());
+    Ok(status)
 }
 
 #[tauri::command]
@@ -1795,14 +1817,25 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
-            is_running: Arc::new(Mutex::new(false)),
-            cancel_flag: Arc::new(Mutex::new(false)),
+            claude: ToolState {
+                is_running: Arc::new(Mutex::new(false)),
+                cancel_flag: Arc::new(Mutex::new(false)),
+            },
+            codex: ToolState {
+                is_running: Arc::new(Mutex::new(false)),
+                cancel_flag: Arc::new(Mutex::new(false)),
+            },
+            gemini: ToolState {
+                is_running: Arc::new(Mutex::new(false)),
+                cancel_flag: Arc::new(Mutex::new(false)),
+            },
         })
         .invoke_handler(tauri::generate_handler![
             execute_claude_command,
             execute_codex_command,
             execute_gemini_command,
             stop_execution,
+            get_running_status,
             check_iterm_status,
             register_schedule,
             unregister_schedule,

@@ -56,6 +56,9 @@ export interface ITermStatus {
 // 実行フェーズ
 export type ExecutionPhase = "waiting" | "checking" | null;
 
+// ツールごとの実行状態
+export type RunningStatus = Record<ToolType, boolean>;
+
 // デフォルト設定
 export const DEFAULT_CLAUDE_SETTINGS: ClaudeToolSettings = {
   executionTime: "",
