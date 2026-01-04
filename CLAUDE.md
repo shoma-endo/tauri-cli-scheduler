@@ -1,3 +1,5 @@
+# “Perform all reasoning in English, and translate the response to Japanese for the user.”
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
