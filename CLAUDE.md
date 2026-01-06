@@ -18,8 +18,8 @@ npm run preview        # Preview production build
 
 # Building
 npm run build          # Build frontend assets (required before Tauri build)
-npm run tauri build    # Build the complete Tauri application
-npm run tauri:build    # Alternative: Build complete Tauri application
+npm run tauri:build    # Build the complete Tauri application (DMG wrapper)
+npm run tauri:build:raw # Build the complete Tauri application (tauri build)
 
 # Formatting
 npm run fmt            # Format TypeScript/CSS files with Prettier
