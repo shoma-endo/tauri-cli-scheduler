@@ -2,7 +2,7 @@
 
 <img src="app.png" alt="Tauri CLI Scheduler" width="128" height="128">
 
-macOS上でiTermを通じて、指定した時刻にClaude CodeまたはCodex CLIコマンドを実行するTauri 2.0デスクトップアプリケーション。
+macOS上でiTermを通じて、指定した時刻にClaude Code / Codex CLI / Gemini CLIコマンドを実行するTauri 2.0デスクトップアプリケーション。
 
 ## 機能
 
@@ -36,7 +36,7 @@ macOS上でiTermを通じて、指定した時刻にClaude CodeまたはCodex CL
 
 ### リリース版をダウンロード（推奨）
 
-[Releases](https://github.com/yourusername/tauri-claude-code-runner/releases)ページから最新版のDMGファイルをダウンロードしてください。
+[Releases](https://github.com/shoma-endo/tauri-cli-scheduler/releases)ページから最新版のDMGファイルをダウンロードしてください。
 
 **重要: macOSのセキュリティ警告について**
 
@@ -63,8 +63,8 @@ xattr -cr ~/Downloads/Tauri.CLI.Scheduler_*.dmg
 
 1. リポジトリをクローン:
 ```bash
-git clone https://github.com/yourusername/tauri-claude-code-runner.git
-cd tauri-claude-code-runner
+git clone https://github.com/shoma-endo/tauri-cli-scheduler.git
+cd tauri-cli-scheduler
 ```
 
 2. 依存関係をインストール:
@@ -112,7 +112,9 @@ npm run tauri:build
    - 自動リトライ等のオプションを設定
 4. **スケジュール管理**（左列）:
    - Launchdに登録して、Macがスリープ状態でも定期実行
-   - または、一度だけ手動実行
+   - 毎日 / 毎週 / 指定間隔（開始日基準）を選択可能
+   - 登録済みスケジュールは編集/削除が可能
+   - スケジュール登録せずに手動実行も可能
 5. **ツール固有の設定**（左列）: 各ツールのオプションを設定
 6. **コマンドを入力**: 実行させたいコマンドを入力
 7. **「開始」をクリック**（右列）: アプリは指定時刻まで待機して実行
@@ -134,12 +136,12 @@ npm run tauri:build
 - **コマンド**: Codexに実行させたい命令
 
 #### Gemini CLI
-- **モデル**: 使用するモデルを選択（例: gemini-2.5-pro）
+- **モデル**: 自動（Gemini 3）
 - **承認モード**:
   - `Default`: 重要操作は都度確認
   - `Auto Edit`: ファイル編集を自動承認
   - `YOLO`: すべて自動承認（注意して使用）
-- **コンテキスト**: 全ファイルの追加や追加ディレクトリ指定
+- **追加ディレクトリ**: カンマ区切りで指定
 - **出力形式**: text / json
 - **コマンド**: Geminiに実行させたい命令
 
@@ -148,11 +150,11 @@ npm run tauri:build
 #### 新規ウィンドウモード（デフォルト）
 - 新しいiTermウィンドウを作成
 - 指定されたディレクトリに移動
-- 完全なClaudeコマンドを実行
+- 選択中ツールの完全なコマンドを実行
 
 #### 既存ウィンドウモード
 - 現在のiTermセッションにコマンドのみを送信
-- セッションでClaude Codeが既に実行されている必要があります
+- セッションで選択中ツールが既に実行されている必要があります
 - 会話を継続する場合に便利
 
 ### Rate Limit処理
@@ -172,6 +174,9 @@ npm run tauri:build
 
 実行中、アプリは以下を表示：
 - 実行時刻までのカウントダウンタイマー
+- ステータスメッセージ
+- ターミナル出力（最後の20行）
+- Rate Limit検出時の待機ステータス/再実行予定
 
 ## ビルド（DMG）
 
@@ -194,9 +199,6 @@ npm run pretauri:build
 
 補足:
 - DMGは既存ファイルがあっても上書きされます。
-- リアルタイムのターミナル出力（最後の20行）
-- 処理ステータスと完了時間
-- Rate Limit検出と待機時間
 
 ## 開発
 
@@ -270,7 +272,7 @@ npm run tauri dev
 ### デフォルト設定
 
 #### Claude Code
-- **モデル**: `opus-4.5`
+- **モデル**: `claude-opus-4-5-20251101`（Opus 4.5）
 - **権限確認をスキップ**: 無効
 - **実行モード**: 新規iTermウィンドウ
 - **自動リトライ**: 無効
@@ -283,9 +285,10 @@ npm run tauri dev
 - **自動リトライ**: 無効
 
 #### Gemini CLI
-- **モデル**: `gemini-2.5-pro`
+- **モデル**: 自動（Gemini 3）
 - **承認モード**: `Default`
-- **コンテキスト**: 無効
+- **追加ディレクトリ**: 未指定
+- **出力形式**: `text`
 - **実行モード**: 新規iTermウィンドウ
 - **自動リトライ**: 無効
 
@@ -366,7 +369,7 @@ Launchdを使用してMacネイティブなスケジュール実行を実装：
 ### Rate Limit検出
 
 アプリは以下の方法でRate Limitを検出：
-1. 60秒ごとにターミナル出力を監視
+1. 1秒ごとにターミナル出力を監視
 2. 「esc to interrupt」の存在を確認（実行中を示す）
 3. 「reset at」メッセージを検出（3回連続で出現）
 4. リセット時刻を解析して待機時間を計算
