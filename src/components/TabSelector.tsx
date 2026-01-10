@@ -16,7 +16,7 @@ export function TabSelector({
   const tabs: ToolType[] = ["claude", "codex", "gemini"];
 
   return (
-    <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
+    <div className="flex border-b border-gray-200 dark:border-gray-700">
       {tabs.map((tab) => {
         const isRunning = runningStatus?.[tab] ?? false;
         return (

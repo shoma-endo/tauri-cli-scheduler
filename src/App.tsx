@@ -888,14 +888,16 @@ function App() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 text-text-primary dark:text-text-dark-primary">
-      <Header activeTab={appSettings.activeTab} />
-      <div className="p-8">
+      <div className="sticky top-0 z-30 -mx-8 px-8 bg-gray-50/90 dark:bg-gray-900/90 backdrop-blur-sm">
+        <Header activeTab={appSettings.activeTab} />
         <TabSelector
           activeTab={appSettings.activeTab}
           onTabChange={handleTabChange}
           disabled={false}
           runningStatus={runningStatus}
         />
+      </div>
+      <div className="p-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* 左列: 設定パネル（約65%） */}
           <div className="md:col-span-2">
