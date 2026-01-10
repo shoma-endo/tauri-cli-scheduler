@@ -33,7 +33,7 @@ interface SettingsPanelProps {
   launchOptionsErrors: Partial<Record<ToolType, string>>;
 
   // Schedule settings
-  registeredSchedule: RegisteredSchedule | null;
+  registeredSchedules: RegisteredSchedule[];
   onScheduleRegister: (success: boolean) => void;
   onScheduleUnregister: (success: boolean) => void;
 }
@@ -64,7 +64,7 @@ export function SettingsPanel({
   launchOptionsErrors,
 
   // Schedule settings
-  registeredSchedule,
+  registeredSchedules,
   onScheduleRegister,
   onScheduleUnregister,
 }: SettingsPanelProps) {
@@ -180,7 +180,7 @@ export function SettingsPanel({
         executionTime={executionTime}
         targetDirectory={targetDirectory}
         isRunning={isRunning}
-        registeredSchedule={registeredSchedule}
+        registeredSchedules={registeredSchedules}
         onScheduleRegister={onScheduleRegister}
         onScheduleUnregister={onScheduleUnregister}
       />

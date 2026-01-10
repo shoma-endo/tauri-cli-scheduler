@@ -196,11 +196,11 @@ function App() {
     gemini: null,
   });
   const [registeredSchedules, setRegisteredSchedules] = useState<
-    Record<ToolType, RegisteredSchedule | null>
+    Record<ToolType, RegisteredSchedule[]>
   >({
-    claude: null,
-    codex: null,
-    gemini: null,
+    claude: [],
+    codex: [],
+    gemini: [],
   });
   const [launchOptionsErrors, setLaunchOptionsErrors] = useState<Record<ToolType, string>>({
     claude: "",
@@ -678,11 +678,16 @@ function App() {
         const schedules = await invoke<RegisteredSchedule[]>(
           "get_registered_schedules"
         );
-        const map: Record<ToolType, RegisteredSchedule | null> = {
-          claude: schedules.find((s) => s.tool === "claude") || null,
-          codex: schedules.find((s) => s.tool === "codex") || null,
-          gemini: schedules.find((s) => s.tool === "gemini") || null,
+        const map: Record<ToolType, RegisteredSchedule[]> = {
+          claude: [],
+          codex: [],
+          gemini: [],
         };
+        schedules.forEach((schedule) => {
+          if (schedule.tool === "claude") map.claude.push(schedule);
+          if (schedule.tool === "codex") map.codex.push(schedule);
+          if (schedule.tool === "gemini") map.gemini.push(schedule);
+        });
         setRegisteredSchedules(map);
       } catch (error) {
         console.error("Failed to load registered schedules:", error);
@@ -834,15 +839,15 @@ function App() {
       // Re-fetch schedules from backend to ensure we have the correct data including new fields
       try {
         const schedules = await invoke<RegisteredSchedule[]>("get_registered_schedules");
-        const updated: Record<ToolType, RegisteredSchedule | null> = {
-          claude: null,
-          codex: null,
-          gemini: null,
+        const updated: Record<ToolType, RegisteredSchedule[]> = {
+          claude: [],
+          codex: [],
+          gemini: [],
         };
-        schedules.forEach((s) => {
-          if (s.tool === "claude" || s.tool === "codex" || s.tool === "gemini") {
-            updated[s.tool as ToolType] = s;
-          }
+        schedules.forEach((schedule) => {
+          if (schedule.tool === "claude") updated.claude.push(schedule);
+          if (schedule.tool === "codex") updated.codex.push(schedule);
+          if (schedule.tool === "gemini") updated.gemini.push(schedule);
         });
         setRegisteredSchedules(updated);
         setStatus((prev) => ({ ...prev, [tool]: "スケジュール登録成功" }));
@@ -855,14 +860,27 @@ function App() {
     }
   }
 
-  function handleScheduleUnregister(success: boolean) {
+  async function handleScheduleUnregister(success: boolean) {
     const tool = appSettings.activeTab;
     if (success) {
-      // Update local state
-      const updated = { ...registeredSchedules };
-      updated[tool] = null;
-      setRegisteredSchedules(updated);
-      setStatus((prev) => ({ ...prev, [tool]: "スケジュール削除成功" }));
+      try {
+        const schedules = await invoke<RegisteredSchedule[]>("get_registered_schedules");
+        const updated: Record<ToolType, RegisteredSchedule[]> = {
+          claude: [],
+          codex: [],
+          gemini: [],
+        };
+        schedules.forEach((schedule) => {
+          if (schedule.tool === "claude") updated.claude.push(schedule);
+          if (schedule.tool === "codex") updated.codex.push(schedule);
+          if (schedule.tool === "gemini") updated.gemini.push(schedule);
+        });
+        setRegisteredSchedules(updated);
+        setStatus((prev) => ({ ...prev, [tool]: "スケジュール削除成功" }));
+      } catch (error) {
+        console.error("Failed to fetch schedules after deletion:", error);
+        setStatus((prev) => ({ ...prev, [tool]: "スケジュール削除成功（表示更新失敗）" }));
+      }
     } else {
       setStatus((prev) => ({ ...prev, [tool]: "スケジュール削除失敗" }));
     }
@@ -902,7 +920,7 @@ function App() {
               onCodexSettingsChange={handleCodexSettingsChange}
               onGeminiSettingsChange={handleGeminiSettingsChange}
               launchOptionsErrors={launchOptionsErrors}
-              registeredSchedule={registeredSchedules[appSettings.activeTab]}
+              registeredSchedules={registeredSchedules[appSettings.activeTab]}
               onScheduleRegister={handleScheduleRegister}
               onScheduleUnregister={handleScheduleUnregister}
             />

@@ -8,6 +8,8 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaunchdConfig {
     pub tool: String,                // "claude", "codex", "gemini"
+    pub schedule_id: String,
+    pub title: String,
     pub hour: u32,
     pub minute: u32,
     pub target_directory: String,
@@ -20,6 +22,8 @@ pub struct LaunchdConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegisteredSchedule {
     pub tool: String,
+    pub schedule_id: String,
+    pub title: String,
     pub execution_time: String,
     pub created_at: String,
     pub schedule_type: String,
@@ -48,16 +52,45 @@ pub fn ensure_config_dir() -> Result<PathBuf, String> {
     Ok(config_dir)
 }
 
-/// Get the plist file path for a specific tool
-fn get_plist_path(tool: &str) -> Result<PathBuf, String> {
+/// Get the legacy plist file path for a specific tool (single-schedule mode)
+fn get_legacy_plist_path(tool: &str) -> Result<PathBuf, String> {
     let config_dir = get_config_dir()?;
     Ok(config_dir.join(format!("com.shoma.tauri-cli-scheduler.{}.plist", tool)))
+}
+
+/// Get the plist file path for a specific schedule
+fn get_plist_path(tool: &str, schedule_id: &str) -> Result<PathBuf, String> {
+    let config_dir = get_config_dir()?;
+    Ok(config_dir.join(format!(
+        "com.shoma.tauri-cli-scheduler.{}.{}.plist",
+        tool, schedule_id
+    )))
+}
+
+fn parse_plist_filename(file_name: &str) -> Option<(String, String)> {
+    let prefix = "com.shoma.tauri-cli-scheduler.";
+    let suffix = ".plist";
+    if !file_name.starts_with(prefix) || !file_name.ends_with(suffix) {
+        return None;
+    }
+    let trimmed = &file_name[prefix.len()..file_name.len() - suffix.len()];
+    let mut parts = trimmed.split('.').collect::<Vec<_>>();
+    if parts.is_empty() {
+        return None;
+    }
+    let tool = parts.remove(0).to_string();
+    let schedule_id = if parts.is_empty() {
+        "legacy".to_string()
+    } else {
+        parts.join(".")
+    };
+    Some((tool, schedule_id))
 }
 
 /// Create a plist for scheduling a command
 pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
     ensure_config_dir()?;
-    let plist_path = get_plist_path(&config.tool)?;
+    let plist_path = get_plist_path(&config.tool, &config.schedule_id)?;
 
     // Get the path to the run script
     let script_name = match config.tool.as_str() {
@@ -89,7 +122,10 @@ pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
     // Label
     plist_dict.insert(
         "Label".to_string(),
-        Value::String(format!("com.shoma.tauri-cli-scheduler.{}", config.tool)),
+        Value::String(format!(
+            "com.shoma.tauri-cli-scheduler.{}.{}",
+            config.tool, config.schedule_id
+        )),
     );
 
     // StartCalendarInterval
@@ -138,6 +174,8 @@ pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
     env_vars.insert("TARGET_DIRECTORY".to_string(), Value::String(config.target_directory.clone()));
     env_vars.insert("AUTO_RETRY".to_string(), Value::String("false".to_string()));
     env_vars.insert("TOOL".to_string(), Value::String(config.tool.clone()));
+    env_vars.insert("SCHEDULE_ID".to_string(), Value::String(config.schedule_id.clone()));
+    env_vars.insert("SCHEDULE_TITLE".to_string(), Value::String(config.title.clone()));
     
     // Store schedule info in env vars for script logic and retrieval
     env_vars.insert("SCHEDULE_TYPE".to_string(), Value::String(config.schedule_type.clone()));
@@ -216,15 +254,19 @@ pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
 }
 
 /// Delete the plist for a specific tool
-pub fn delete_plist(tool: &str) -> Result<String, String> {
-    let plist_path = get_plist_path(tool)?;
+pub fn delete_plist(tool: &str, schedule_id: &str) -> Result<String, String> {
+    let plist_path = if schedule_id == "legacy" {
+        get_legacy_plist_path(tool)?
+    } else {
+        get_plist_path(tool, schedule_id)?
+    };
 
     if plist_path.exists() {
         fs::remove_file(&plist_path)
             .map_err(|e| format!("Failed to delete plist file: {}", e))?;
         Ok(format!("Plist deleted: {}", plist_path.display()))
     } else {
-        Ok(format!("Plist not found for tool: {}", tool))
+        Err(format!("Plist not found for tool: {}", tool))
     }
 }
 
@@ -233,10 +275,23 @@ pub fn get_registered_schedules() -> Result<Vec<RegisteredSchedule>, String> {
     let config_dir = get_config_dir()?;
     let mut schedules = Vec::new();
 
-    // Check for plist files
-    for tool in &["claude", "codex", "gemini"] {
-        if let Ok(Some(schedule)) = load_plist(tool) {
-            schedules.push(schedule);
+    if !config_dir.exists() {
+        return Ok(schedules);
+    }
+
+    let entries = fs::read_dir(&config_dir)
+        .map_err(|e| format!("Failed to read config directory: {}", e))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read config entry: {}", e))?;
+        let path = entry.path();
+        if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+            if parse_plist_filename(file_name).is_none() {
+                continue;
+            }
+            if let Ok(Some(schedule)) = load_plist_from_path(&path) {
+                schedules.push(schedule);
+            }
         }
     }
 
@@ -245,19 +300,33 @@ pub fn get_registered_schedules() -> Result<Vec<RegisteredSchedule>, String> {
 
 /// Check if a tool is scheduled
 pub fn is_tool_scheduled(tool: &str) -> Result<bool, String> {
-    let plist_path = get_plist_path(tool)?;
-    Ok(plist_path.exists())
+    let config_dir = get_config_dir()?;
+    if !config_dir.exists() {
+        return Ok(false);
+    }
+    let entries = fs::read_dir(&config_dir)
+        .map_err(|e| format!("Failed to read config directory: {}", e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read config entry: {}", e))?;
+        let path = entry.path();
+        if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+            if let Some((found_tool, _)) = parse_plist_filename(file_name) {
+                if found_tool == tool {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
 }
 
-/// Load plist content for a tool
-pub fn load_plist(tool: &str) -> Result<Option<RegisteredSchedule>, String> {
-    let plist_path = get_plist_path(tool)?;
-
+/// Load plist content for a path
+pub fn load_plist_from_path(plist_path: &PathBuf) -> Result<Option<RegisteredSchedule>, String> {
     if !plist_path.exists() {
         return Ok(None);
     }
 
-    let plist_content = fs::read(&plist_path)
+    let plist_content = fs::read(plist_path)
         .map_err(|e| format!("Failed to read plist file: {}", e))?;
 
     let plist_value: Value = plist::from_reader(Cursor::new(plist_content.as_slice()))
@@ -277,6 +346,9 @@ pub fn load_plist(tool: &str) -> Result<Option<RegisteredSchedule>, String> {
                         let mut schedule_type = "daily".to_string();
                         let mut interval_value = None;
                         let mut start_date = None;
+                        let mut schedule_id = None;
+                        let mut tool = None;
+                        let mut title = None;
 
                         if let Some(env_vars) = dict.get("EnvironmentVariables") {
                             if let Some(env_dict) = env_vars.as_dictionary() {
@@ -291,11 +363,45 @@ pub fn load_plist(tool: &str) -> Result<Option<RegisteredSchedule>, String> {
                                 if let Some(Value::String(s)) = env_dict.get("SCHEDULE_START_DATE") {
                                     start_date = Some(s.clone());
                                 }
+                                if let Some(Value::String(s)) = env_dict.get("SCHEDULE_ID") {
+                                    schedule_id = Some(s.clone());
+                                }
+                                if let Some(Value::String(s)) = env_dict.get("SCHEDULE_TITLE") {
+                                    title = Some(s.clone());
+                                }
+                                if let Some(Value::String(s)) = env_dict.get("TOOL") {
+                                    tool = Some(s.clone());
+                                }
                             }
                         }
 
+                        let (tool, schedule_id) = if let (Some(t), Some(id)) =
+                            (tool.as_ref(), schedule_id.as_ref())
+                        {
+                            (t.clone(), id.clone())
+                        } else {
+                            let file_name = plist_path
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or_default();
+                            if let Some((parsed_tool, parsed_id)) =
+                                parse_plist_filename(file_name)
+                            {
+                                (parsed_tool, parsed_id)
+                            } else {
+                                (
+                                    tool.unwrap_or_else(|| "unknown".to_string()),
+                                    schedule_id.unwrap_or_else(|| "legacy".to_string()),
+                                )
+                            }
+                        };
+
+                        let title = title.unwrap_or_else(|| "無題のスケジュール".to_string());
+
                         return Ok(Some(RegisteredSchedule {
-                            tool: tool.to_string(),
+                            tool,
+                            schedule_id,
+                            title,
                             execution_time,
                             created_at: chrono::Local::now().to_rfc3339(),
                             schedule_type,

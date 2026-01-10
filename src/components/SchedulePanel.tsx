@@ -9,7 +9,7 @@ interface SchedulePanelProps {
   executionTime: string;
   targetDirectory: string;
   isRunning: boolean;
-  registeredSchedule: RegisteredSchedule | null;
+  registeredSchedules: RegisteredSchedule[];
   onScheduleRegister: (success: boolean) => void;
   onScheduleUnregister: (success: boolean) => void;
 }
@@ -19,10 +19,11 @@ export function SchedulePanel({
   executionTime,
   targetDirectory,
   isRunning,
-  registeredSchedule,
+  registeredSchedules,
   onScheduleRegister,
   onScheduleUnregister,
 }: SchedulePanelProps) {
+  const hasSchedules = registeredSchedules.length > 0;
   return (
     <Card>
       <CardHeader>
@@ -40,10 +41,8 @@ export function SchedulePanel({
           />
         </svg>
         <CardTitle>スケジュール管理</CardTitle>
-        {registeredSchedule && (
-          <Badge variant="success">
-            登録済み
-          </Badge>
+        {hasSchedules && (
+          <Badge variant="success">{registeredSchedules.length}件</Badge>
         )}
       </CardHeader>
       <CardContent>
@@ -52,7 +51,7 @@ export function SchedulePanel({
           executionTime={executionTime}
           targetDirectory={targetDirectory}
           isRunning={isRunning}
-          registeredSchedule={registeredSchedule}
+          registeredSchedules={registeredSchedules}
           onScheduleRegister={onScheduleRegister}
           onScheduleUnregister={onScheduleUnregister}
         />
@@ -60,4 +59,3 @@ export function SchedulePanel({
     </Card>
   );
 }
-

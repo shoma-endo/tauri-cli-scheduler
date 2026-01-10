@@ -143,6 +143,8 @@ struct ScheduleResult {
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     registered_tool: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    schedule_id: Option<String>,
 }
 
 #[tauri::command]
@@ -1864,6 +1866,7 @@ fn register_schedule(
     execution_time: String,
     target_directory: String,
     command_args: String,
+    title: String,
     schedule_type: Option<String>,
     interval_value: Option<u32>,
     start_date: Option<String>,
@@ -1875,6 +1878,7 @@ fn register_schedule(
             success: false,
             message: "時刻の形式が正しくありません（HH:MM形式で指定してください）".to_string(),
             registered_tool: None,
+            schedule_id: None,
         });
     }
 
@@ -1885,6 +1889,7 @@ fn register_schedule(
                 success: false,
                 message: "時間は0-23の範囲で指定してください".to_string(),
                 registered_tool: None,
+                schedule_id: None,
             });
         }
     };
@@ -1896,6 +1901,7 @@ fn register_schedule(
                 success: false,
                 message: "分は0-59の範囲で指定してください".to_string(),
                 registered_tool: None,
+                schedule_id: None,
             });
         }
     };
@@ -1906,6 +1912,7 @@ fn register_schedule(
             success: false,
             message: "無効なツール指定です".to_string(),
             registered_tool: None,
+            schedule_id: None,
         });
     }
 
@@ -1917,6 +1924,7 @@ fn register_schedule(
             success: false,
             message: "毎週実行の場合は開始日を指定してください（曜日決定のため）".to_string(),
             registered_tool: None,
+            schedule_id: None,
         });
     }
 
@@ -1926,13 +1934,23 @@ fn register_schedule(
                 success: false,
                 message: "間隔実行の場合は間隔（日）と開始日を指定してください".to_string(),
                 registered_tool: None,
+                schedule_id: None,
             });
         }
     }
 
+    let now = chrono::Local::now();
+    let schedule_id = format!(
+        "{}{:03}",
+        now.format("%Y%m%d%H%M%S"),
+        now.timestamp_subsec_millis()
+    );
+
     // Create LaunchdConfig and generate plist
     let config = LaunchdConfig {
         tool: tool.clone(),
+        schedule_id: schedule_id.clone(),
+        title,
         hour,
         minute,
         target_directory,
@@ -1954,37 +1972,147 @@ fn register_schedule(
                 success: true,
                 message: msg,
                 registered_tool: Some(tool),
+                schedule_id: Some(schedule_id),
             })
         },
         Err(e) => Ok(ScheduleResult {
             success: false,
             message: format!("スケジュール登録エラー: {}", e),
             registered_tool: None,
+            schedule_id: None,
         }),
     }
 }
 
 #[tauri::command]
-fn unregister_schedule(tool: String) -> Result<ScheduleResult, String> {
+fn unregister_schedule(tool: String, schedule_id: String) -> Result<ScheduleResult, String> {
     // Validate tool
     if !["claude", "codex", "gemini"].contains(&tool.as_str()) {
         return Ok(ScheduleResult {
             success: false,
             message: "無効なツール指定です".to_string(),
             registered_tool: None,
+            schedule_id: None,
         });
     }
 
-    match plist_manager::delete_plist(&tool) {
+    match plist_manager::delete_plist(&tool, &schedule_id) {
         Ok(_msg) => Ok(ScheduleResult {
             success: true,
             message: "スケジュール削除成功".to_string(),
             registered_tool: Some(tool),
+            schedule_id: Some(schedule_id),
         }),
         Err(e) => Ok(ScheduleResult {
             success: false,
             message: format!("スケジュール削除エラー: {}", e),
             registered_tool: None,
+            schedule_id: None,
+        }),
+    }
+}
+
+#[tauri::command]
+fn update_schedule(
+    tool: String,
+    schedule_id: String,
+    execution_time: String,
+    target_directory: String,
+    command_args: String,
+    title: String,
+    schedule_type: Option<String>,
+    interval_value: Option<u32>,
+    start_date: Option<String>,
+) -> Result<ScheduleResult, String> {
+    let parts: Vec<&str> = execution_time.split(':').collect();
+    if parts.len() != 2 {
+        return Ok(ScheduleResult {
+            success: false,
+            message: "時刻の形式が正しくありません（HH:MM形式で指定してください）".to_string(),
+            registered_tool: None,
+            schedule_id: None,
+        });
+    }
+
+    let hour: u32 = match parts[0].parse() {
+        Ok(h) if h <= 23 => h,
+        _ => {
+            return Ok(ScheduleResult {
+                success: false,
+                message: "時間は0-23の範囲で指定してください".to_string(),
+                registered_tool: None,
+                schedule_id: None,
+            });
+        }
+    };
+
+    let minute: u32 = match parts[1].parse() {
+        Ok(m) if m <= 59 => m,
+        _ => {
+            return Ok(ScheduleResult {
+                success: false,
+                message: "分は0-59の範囲で指定してください".to_string(),
+                registered_tool: None,
+                schedule_id: None,
+            });
+        }
+    };
+
+    if !["claude", "codex", "gemini"].contains(&tool.as_str()) {
+        return Ok(ScheduleResult {
+            success: false,
+            message: "無効なツール指定です".to_string(),
+            registered_tool: None,
+            schedule_id: None,
+        });
+    }
+
+    let sched_type = schedule_type.unwrap_or_else(|| "daily".to_string());
+    if sched_type == "weekly" && start_date.is_none() {
+        return Ok(ScheduleResult {
+            success: false,
+            message: "毎週実行の場合は開始日を指定してください（曜日決定のため）".to_string(),
+            registered_tool: None,
+            schedule_id: None,
+        });
+    }
+
+    if sched_type == "interval" {
+        if interval_value.is_none() || start_date.is_none() {
+            return Ok(ScheduleResult {
+                success: false,
+                message: "間隔実行の場合は間隔（日）と開始日を指定してください".to_string(),
+                registered_tool: None,
+                schedule_id: None,
+            });
+        }
+    }
+
+    let config = LaunchdConfig {
+        tool: tool.clone(),
+        schedule_id: schedule_id.clone(),
+        title,
+        hour,
+        minute,
+        target_directory,
+        command_args,
+        schedule_type: sched_type.clone(),
+        interval_value,
+        start_date,
+    };
+
+    match plist_manager::create_plist(&config) {
+        Ok(_msg) => Ok(ScheduleResult {
+            success: true,
+            message: "スケジュール更新成功".to_string(),
+            registered_tool: Some(tool),
+            schedule_id: Some(schedule_id),
+        }),
+        Err(e) => Ok(ScheduleResult {
+            success: false,
+            message: format!("スケジュール更新エラー: {}", e),
+            registered_tool: None,
+            schedule_id: None,
         }),
     }
 }
@@ -2022,6 +2150,7 @@ pub fn run() {
             check_iterm_status,
             register_schedule,
             unregister_schedule,
+            update_schedule,
             get_registered_schedules
         ])
         .run(tauri::generate_context!())

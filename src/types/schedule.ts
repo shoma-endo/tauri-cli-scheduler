@@ -1,5 +1,7 @@
 export interface RegisteredSchedule {
   tool: string;
+  schedule_id: string;
+  title: string;
   execution_time: string;
   schedule_type: 'daily' | 'weekly' | 'interval';
   interval_value?: number;
@@ -11,6 +13,7 @@ export interface ScheduleResult {
   success: boolean;
   message: string;
   registered_tool?: string;
+  schedule_id?: string;
 }
 
 export type ScheduleType = 'daily' | 'weekly' | 'interval';
