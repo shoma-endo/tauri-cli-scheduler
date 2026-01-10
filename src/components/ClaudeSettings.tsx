@@ -82,7 +82,7 @@ export function ClaudeSettings({
 
       {/* Claude Codeで実行する命令 */}
       <Textarea
-        label="Claude Code 命令"
+        label="1回のみの予約実行"
         value={settings.command}
         onChange={(e) =>
           onSettingsChange({ ...settings, command: e.target.value })

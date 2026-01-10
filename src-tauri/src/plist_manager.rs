@@ -25,6 +25,7 @@ pub struct RegisteredSchedule {
     pub schedule_id: String,
     pub title: String,
     pub execution_time: String,
+    pub command_args: String,
     pub created_at: String,
     pub schedule_type: String,
     pub interval_value: Option<u32>,
@@ -349,6 +350,7 @@ pub fn load_plist_from_path(plist_path: &PathBuf) -> Result<Option<RegisteredSch
                         let mut schedule_id = None;
                         let mut tool = None;
                         let mut title = None;
+                        let mut command_args = None;
 
                         if let Some(env_vars) = dict.get("EnvironmentVariables") {
                             if let Some(env_dict) = env_vars.as_dictionary() {
@@ -371,6 +373,15 @@ pub fn load_plist_from_path(plist_path: &PathBuf) -> Result<Option<RegisteredSch
                                 }
                                 if let Some(Value::String(s)) = env_dict.get("TOOL") {
                                     tool = Some(s.clone());
+                                }
+                                if let Some(Value::String(s)) = env_dict.get("CLAUDE_COMMAND") {
+                                    command_args = Some(s.clone());
+                                }
+                                if let Some(Value::String(s)) = env_dict.get("CODEX_COMMAND") {
+                                    command_args = Some(s.clone());
+                                }
+                                if let Some(Value::String(s)) = env_dict.get("GEMINI_COMMAND") {
+                                    command_args = Some(s.clone());
                                 }
                             }
                         }
@@ -397,12 +408,14 @@ pub fn load_plist_from_path(plist_path: &PathBuf) -> Result<Option<RegisteredSch
                         };
 
                         let title = title.unwrap_or_else(|| "無題のスケジュール".to_string());
+                        let command_args = command_args.unwrap_or_default();
 
                         return Ok(Some(RegisteredSchedule {
                             tool,
                             schedule_id,
                             title,
                             execution_time,
+                            command_args,
                             created_at: chrono::Local::now().to_rfc3339(),
                             schedule_type,
                             interval_value,

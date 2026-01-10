@@ -3,6 +3,7 @@ export interface RegisteredSchedule {
   schedule_id: string;
   title: string;
   execution_time: string;
+  command_args?: string;
   schedule_type: 'daily' | 'weekly' | 'interval';
   interval_value?: number;
   start_date?: string; // YYYY-MM-DD

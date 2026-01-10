@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { RegisteredSchedule, ScheduleResult, ScheduleType } from "../types/schedule";
 import { Button } from "./ui/Button";
-import { Input } from "./ui/Input";
+import { Input, Textarea } from "./ui/Input";
 
 interface ScheduleManagerProps {
   tool: string;
@@ -40,12 +40,14 @@ export function ScheduleManager({
   const [startDate, setStartDate] = useState<string>(getTodayDateString());
   const [scheduleTime, setScheduleTime] = useState<string>(executionTime);
   const [scheduleTitle, setScheduleTitle] = useState<string>("");
+  const [scheduleCommand, setScheduleCommand] = useState<string>("");
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState<string>("");
   const [editScheduleType, setEditScheduleType] = useState<ScheduleType>("daily");
   const [editIntervalValue, setEditIntervalValue] = useState<number>(3);
   const [editStartDate, setEditStartDate] = useState<string>(getTodayDateString());
   const [editScheduleTime, setEditScheduleTime] = useState<string>(executionTime);
+  const [editScheduleCommand, setEditScheduleCommand] = useState<string>("");
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
@@ -66,6 +68,10 @@ export function ScheduleManager({
       setMessage("エラー: 実行対象ディレクトリを指定してください");
       return;
     }
+    if (!scheduleCommand.trim()) {
+      setMessage("エラー: スケジュール命令を入力してください");
+      return;
+    }
 
     setIsRegistering(true);
     setMessage("スケジュール登録中...");
@@ -75,7 +81,7 @@ export function ScheduleManager({
         tool,
         executionTime: scheduleTime,
         targetDirectory,
-        commandArgs: "",
+        commandArgs: scheduleCommand,
         title: scheduleTitle.trim() || "無題のスケジュール",
         scheduleType,
         intervalValue: scheduleType === 'interval' ? intervalValue : undefined,
@@ -104,6 +110,7 @@ export function ScheduleManager({
     setEditScheduleType(schedule.schedule_type);
     setEditIntervalValue(schedule.interval_value ?? 3);
     setEditStartDate(schedule.start_date ?? getTodayDateString());
+    setEditScheduleCommand(schedule.command_args ?? "");
   };
 
   const cancelEditing = () => {
@@ -116,6 +123,10 @@ export function ScheduleManager({
       setMessage("エラー: 実行対象ディレクトリを指定してください");
       return;
     }
+    if (!editScheduleCommand.trim()) {
+      setMessage("エラー: スケジュール命令を入力してください");
+      return;
+    }
 
     setIsUpdating(true);
     setMessage("スケジュール更新中...");
@@ -126,7 +137,7 @@ export function ScheduleManager({
         scheduleId: editingScheduleId,
         executionTime: editScheduleTime,
         targetDirectory,
-        commandArgs: "",
+        commandArgs: editScheduleCommand,
         title: editTitle.trim() || "無題のスケジュール",
         scheduleType: editScheduleType,
         intervalValue: editScheduleType === "interval" ? editIntervalValue : undefined,
@@ -273,6 +284,15 @@ export function ScheduleManager({
             />
           </div>
 
+          <Textarea
+            label="スケジュール命令"
+            value={editScheduleCommand}
+            onChange={(e) => setEditScheduleCommand(e.target.value)}
+            disabled={isRunning}
+            placeholder="例: 仕様書を要約してください"
+            rows={4}
+          />
+
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -368,7 +388,12 @@ export function ScheduleManager({
             <Button
               variant="primary"
               onClick={handleUpdateSchedule}
-              disabled={isRunning || isUpdating || !targetDirectory.trim()}
+              disabled={
+                isRunning ||
+                isUpdating ||
+                !targetDirectory.trim() ||
+                !editScheduleCommand.trim()
+              }
               isLoading={isUpdating}
               className="flex-1"
             >
@@ -394,6 +419,15 @@ export function ScheduleManager({
             placeholder="例: 朝の定例タスク"
           />
         </div>
+
+        <Textarea
+          label="スケジュール命令"
+          value={scheduleCommand}
+          onChange={(e) => setScheduleCommand(e.target.value)}
+          disabled={isRunning}
+          placeholder="例: 仕様書を要約してください"
+          rows={4}
+        />
 
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -493,7 +527,12 @@ export function ScheduleManager({
           <Button
             variant="primary"
             onClick={handleRegisterSchedule}
-            disabled={isRunning || isRegistering || !targetDirectory.trim()}
+            disabled={
+              isRunning ||
+              isRegistering ||
+              !targetDirectory.trim() ||
+              !scheduleCommand.trim()
+            }
             isLoading={isRegistering}
             className="flex-1"
           >

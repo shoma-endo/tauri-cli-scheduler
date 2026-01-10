@@ -1916,6 +1916,15 @@ fn register_schedule(
         });
     }
 
+    if command_args.trim().is_empty() {
+        return Ok(ScheduleResult {
+            success: false,
+            message: "スケジュール命令を入力してください".to_string(),
+            registered_tool: None,
+            schedule_id: None,
+        });
+    }
+
     let sched_type = schedule_type.unwrap_or_else(|| "daily".to_string());
 
     // Basic validation for interval/weekly
@@ -2062,6 +2071,15 @@ fn update_schedule(
         return Ok(ScheduleResult {
             success: false,
             message: "無効なツール指定です".to_string(),
+            registered_tool: None,
+            schedule_id: None,
+        });
+    }
+
+    if command_args.trim().is_empty() {
+        return Ok(ScheduleResult {
+            success: false,
+            message: "スケジュール命令を入力してください".to_string(),
             registered_tool: None,
             schedule_id: None,
         });

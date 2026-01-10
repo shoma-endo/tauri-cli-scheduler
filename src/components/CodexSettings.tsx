@@ -166,7 +166,7 @@ export function CodexSettings({
 
       {/* Codexで実行する命令 */}
       <Textarea
-        label="Codex 命令"
+        label="1回のみの予約実行"
         value={settings.command}
         onChange={(e) =>
           onSettingsChange({ ...settings, command: e.target.value })
