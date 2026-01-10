@@ -1,3 +1,4 @@
+use chrono::Datelike;
 use plist::{Dictionary, Value};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -11,6 +12,9 @@ pub struct LaunchdConfig {
     pub minute: u32,
     pub target_directory: String,
     pub command_args: String,
+    pub schedule_type: String,       // "daily", "weekly", "interval"
+    pub interval_value: Option<u32>,
+    pub start_date: Option<String>,  // YYYY-MM-DD
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +22,9 @@ pub struct RegisteredSchedule {
     pub tool: String,
     pub execution_time: String,
     pub created_at: String,
+    pub schedule_type: String,
+    pub interval_value: Option<u32>,
+    pub start_date: Option<String>,
 }
 
 /// Get the config directory for the scheduler
@@ -89,6 +96,17 @@ pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
     let mut cal_interval = Dictionary::new();
     cal_interval.insert("Hour".to_string(), Value::Integer((config.hour as i64).into()));
     cal_interval.insert("Minute".to_string(), Value::Integer((config.minute as i64).into()));
+
+    if config.schedule_type == "weekly" {
+        if let Some(date_str) = &config.start_date {
+            if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                let weekday = date.weekday().num_days_from_sunday(); // 0 = Sun, 1 = Mon, ...
+                cal_interval.insert("Weekday".to_string(), Value::Integer((weekday as i64).into()));
+            }
+        }
+    }
+    // For 'interval', we set it to run daily, but filter execution in the script.
+    
     plist_dict.insert("StartCalendarInterval".to_string(), Value::Dictionary(cal_interval));
 
     // ProgramArguments
@@ -120,6 +138,15 @@ pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
     env_vars.insert("TARGET_DIRECTORY".to_string(), Value::String(config.target_directory.clone()));
     env_vars.insert("AUTO_RETRY".to_string(), Value::String("false".to_string()));
     env_vars.insert("TOOL".to_string(), Value::String(config.tool.clone()));
+    
+    // Store schedule info in env vars for script logic and retrieval
+    env_vars.insert("SCHEDULE_TYPE".to_string(), Value::String(config.schedule_type.clone()));
+    if let Some(val) = config.interval_value {
+        env_vars.insert("SCHEDULE_INTERVAL_DAYS".to_string(), Value::String(val.to_string()));
+    }
+    if let Some(date) = &config.start_date {
+        env_vars.insert("SCHEDULE_START_DATE".to_string(), Value::String(date.clone()));
+    }
 
     plist_dict.insert("EnvironmentVariables".to_string(), Value::Dictionary(env_vars));
 
@@ -159,6 +186,8 @@ pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
                     plist_xml.push_str(&format!("\t\t<key>{}</key>\n", escape_xml(k)));
                     if let Value::Integer(num) = v {
                         plist_xml.push_str(&format!("\t\t<integer>{}</integer>\n", num));
+                    } else if let Value::String(s) = v {
+                         plist_xml.push_str(&format!("\t\t<string>{}</string>\n", escape_xml(s)));
                     }
                 }
                 plist_xml.push_str("\t</dict>\n");
@@ -206,32 +235,8 @@ pub fn get_registered_schedules() -> Result<Vec<RegisteredSchedule>, String> {
 
     // Check for plist files
     for tool in &["claude", "codex", "gemini"] {
-        let plist_path = config_dir.join(format!("com.shoma.tauri-cli-scheduler.{}.plist", tool));
-
-        if plist_path.exists() {
-            // Try to parse the plist to get the execution time
-            if let Ok(plist_content) = fs::read(&plist_path) {
-                if let Ok(plist_value) = plist::from_reader::<_, Value>(Cursor::new(plist_content.as_slice())) {
-                    if let Some(dict) = plist_value.as_dictionary() {
-                        if let Some(cal_interval) = dict.get("StartCalendarInterval") {
-                            if let Some(cal_dict) = cal_interval.as_dictionary() {
-                                if let (Some(hour_val), Some(minute_val)) =
-                                    (cal_dict.get("Hour"), cal_dict.get("Minute")) {
-                                    if let (Some(hour), Some(minute)) =
-                                        (hour_val.as_signed_integer(), minute_val.as_signed_integer()) {
-                                        let execution_time = format!("{:02}:{:02}", hour, minute);
-                                        schedules.push(RegisteredSchedule {
-                                            tool: tool.to_string(),
-                                            execution_time,
-                                            created_at: chrono::Local::now().to_rfc3339(),
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if let Ok(Some(schedule)) = load_plist(tool) {
+            schedules.push(schedule);
         }
     }
 
@@ -265,11 +270,37 @@ pub fn load_plist(tool: &str) -> Result<Option<RegisteredSchedule>, String> {
                     (cal_dict.get("Hour"), cal_dict.get("Minute")) {
                     if let (Some(hour), Some(minute)) =
                         (hour_val.as_signed_integer(), minute_val.as_signed_integer()) {
+                        
                         let execution_time = format!("{:02}:{:02}", hour, minute);
+                        
+                        // Parse EnvironmentVariables for extra schedule info
+                        let mut schedule_type = "daily".to_string();
+                        let mut interval_value = None;
+                        let mut start_date = None;
+
+                        if let Some(env_vars) = dict.get("EnvironmentVariables") {
+                            if let Some(env_dict) = env_vars.as_dictionary() {
+                                if let Some(Value::String(s)) = env_dict.get("SCHEDULE_TYPE") {
+                                    schedule_type = s.clone();
+                                }
+                                if let Some(Value::String(s)) = env_dict.get("SCHEDULE_INTERVAL_DAYS") {
+                                    if let Ok(v) = s.parse::<u32>() {
+                                        interval_value = Some(v);
+                                    }
+                                }
+                                if let Some(Value::String(s)) = env_dict.get("SCHEDULE_START_DATE") {
+                                    start_date = Some(s.clone());
+                                }
+                            }
+                        }
+
                         return Ok(Some(RegisteredSchedule {
                             tool: tool.to_string(),
                             execution_time,
                             created_at: chrono::Local::now().to_rfc3339(),
+                            schedule_type,
+                            interval_value,
+                            start_date,
                         }));
                     }
                 }

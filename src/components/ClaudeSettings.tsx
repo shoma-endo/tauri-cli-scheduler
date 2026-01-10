@@ -1,11 +1,12 @@
 import { ClaudeToolSettings } from "../types/tools";
 import { Select } from "./ui/Select";
-import { Textarea } from "./ui/Input";
+import { Input, Textarea } from "./ui/Input";
 
 interface ClaudeSettingsProps {
   settings: ClaudeToolSettings;
   isRunning: boolean;
   useNewITermWindow: boolean;
+  launchOptionsError?: string;
   onSettingsChange: (settings: ClaudeToolSettings) => void;
 }
 
@@ -13,6 +14,7 @@ export function ClaudeSettings({
   settings,
   isRunning,
   useNewITermWindow,
+  launchOptionsError,
   onSettingsChange,
 }: ClaudeSettingsProps) {
   return (
@@ -62,6 +64,19 @@ export function ClaudeSettings({
               </p>
             </div>
           </div>
+
+          <Input
+            label="起動オプション（追加）"
+            type="text"
+            value={settings.launchOptions}
+            onChange={(e) =>
+              onSettingsChange({ ...settings, launchOptions: e.target.value })
+            }
+            disabled={isRunning}
+            placeholder="例: --max-tokens 2000"
+            error={launchOptionsError}
+            helperText="モデル/権限設定は上の項目で指定してください"
+          />
         </>
       )}
 
@@ -79,4 +94,3 @@ export function ClaudeSettings({
     </div>
   );
 }
-

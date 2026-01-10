@@ -6,6 +6,7 @@ interface GeminiSettingsProps {
   settings: GeminiToolSettings;
   isRunning: boolean;
   useNewITermWindow: boolean;
+  launchOptionsError?: string;
   onSettingsChange: (settings: GeminiToolSettings) => void;
 }
 
@@ -13,6 +14,7 @@ export function GeminiSettings({
   settings,
   isRunning,
   useNewITermWindow,
+  launchOptionsError,
   onSettingsChange,
 }: GeminiSettingsProps) {
   return (
@@ -148,6 +150,19 @@ export function GeminiSettings({
             ]}
             disabled={isRunning}
           />
+
+          <Input
+            label="起動オプション（追加）"
+            type="text"
+            value={settings.launchOptions}
+            onChange={(e) =>
+              onSettingsChange({ ...settings, launchOptions: e.target.value })
+            }
+            disabled={isRunning}
+            placeholder="例: --verbose"
+            error={launchOptionsError}
+            helperText="モデル/承認/出力形式/追加ディレクトリは上の項目で指定してください"
+          />
         </>
       )}
 
@@ -165,4 +180,3 @@ export function GeminiSettings({
     </div>
   );
 }
-

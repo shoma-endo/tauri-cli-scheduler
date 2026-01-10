@@ -30,6 +30,7 @@ interface SettingsPanelProps {
   onClaudeSettingsChange: (settings: ClaudeToolSettings) => void;
   onCodexSettingsChange: (settings: CodexToolSettings) => void;
   onGeminiSettingsChange: (settings: GeminiToolSettings) => void;
+  launchOptionsErrors: Partial<Record<ToolType, string>>;
 
   // Schedule settings
   registeredSchedule: RegisteredSchedule | null;
@@ -60,6 +61,7 @@ export function SettingsPanel({
   onClaudeSettingsChange,
   onCodexSettingsChange,
   onGeminiSettingsChange,
+  launchOptionsErrors,
 
   // Schedule settings
   registeredSchedule,
@@ -108,6 +110,7 @@ export function SettingsPanel({
             settings={claudeSettings}
             isRunning={isRunning}
             useNewITermWindow={useNewITermWindow}
+            launchOptionsError={launchOptionsErrors.claude}
             onSettingsChange={onClaudeSettingsChange}
           />
         </ToolSettingsSection>
@@ -136,6 +139,7 @@ export function SettingsPanel({
             settings={codexSettings}
             isRunning={isRunning}
             useNewITermWindow={useNewITermWindow}
+            launchOptionsError={launchOptionsErrors.codex}
             onSettingsChange={onCodexSettingsChange}
           />
         </ToolSettingsSection>
@@ -164,6 +168,7 @@ export function SettingsPanel({
             settings={geminiSettings}
             isRunning={isRunning}
             useNewITermWindow={useNewITermWindow}
+            launchOptionsError={launchOptionsErrors.gemini}
             onSettingsChange={onGeminiSettingsChange}
           />
         </ToolSettingsSection>

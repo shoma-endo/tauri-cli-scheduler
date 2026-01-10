@@ -28,6 +28,98 @@ fn escape_applescript_string(input: &str) -> String {
         .replace('\r', r"\r")
 }
 
+fn has_balanced_quotes(input: &str) -> bool {
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+
+    for ch in input.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '\'' && !in_double {
+            in_single = !in_single;
+            continue;
+        }
+        if ch == '"' && !in_single {
+            in_double = !in_double;
+        }
+    }
+
+    !in_single && !in_double && !escaped
+}
+
+fn contains_flag(input: &str, flag: &str) -> bool {
+    let input_bytes = input.as_bytes();
+    let flag_bytes = flag.as_bytes();
+    let mut index = 0;
+
+    while index < input.len() {
+        let found = match input[index..].find(flag) {
+            Some(pos) => index + pos,
+            None => return false,
+        };
+        let before = if found == 0 {
+            b' '
+        } else {
+            input_bytes[found - 1]
+        };
+        let after_index = found + flag_bytes.len();
+        let after = if after_index >= input_bytes.len() {
+            b' '
+        } else {
+            input_bytes[after_index]
+        };
+        let before_ok = before.is_ascii_whitespace();
+        let after_ok = after.is_ascii_whitespace() || after == b'=';
+        if before_ok && after_ok {
+            return true;
+        }
+        index = found + flag_bytes.len();
+    }
+
+    false
+}
+
+fn validate_launch_options(tool: &str, options: &str) -> Result<(), String> {
+    if options.trim().is_empty() {
+        return Ok(());
+    }
+    if options.contains('\n') || options.contains('\r') {
+        return Err("起動オプションに改行は使用できません".to_string());
+    }
+    if !has_balanced_quotes(options) {
+        return Err("起動オプションの引用符が不正です".to_string());
+    }
+
+    let reserved_flags: &[&str] = match tool {
+        "claude" => &["--model", "--dangerously-skip-permissions"],
+        "codex" => &["--model", "--sandbox", "--ask-for-approval", "--full-auto", "--search"],
+        "gemini" => &[
+            "--model",
+            "--output-format",
+            "--include-directories",
+            "--approval-mode",
+            "--yolo",
+            "--prompt",
+        ],
+        _ => &[],
+    };
+
+    for flag in reserved_flags {
+        if contains_flag(options, flag) {
+            return Err(format!("起動オプションに予約済みフラグが含まれています: {}", flag));
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Serialize, Deserialize)]
 struct ExecutionResult {
     status: String,
@@ -101,7 +193,9 @@ async fn check_iterm_status() -> Result<ITermStatus, String> {
 async fn execute_claude_command(
     execution_time: String, // HH:MM format
     target_directory: String,
-    claude_options: String,
+    claude_model: String,
+    claude_skip_permissions: bool,
+    claude_launch_options: String,
     claude_command: String,
     auto_retry_on_rate_limit: bool,
     use_new_window: bool,
@@ -127,6 +221,14 @@ async fn execute_claude_command(
         let mut is_running = is_running_clone.lock().unwrap();
         *is_running = false;
         return Err(format!("ディレクトリが存在しません: {}", target_directory));
+    }
+
+    if use_new_window {
+        if let Err(err) = validate_launch_options("claude", &claude_launch_options) {
+            let mut is_running = is_running_clone.lock().unwrap();
+            *is_running = false;
+            return Err(err);
+        }
     }
 
     // Parse execution time
@@ -200,6 +302,18 @@ async fn execute_claude_command(
 
     // Send event to frontend that execution is starting
     app.emit("execution-started", "").ok();
+
+    let mut options = Vec::new();
+    if !claude_model.is_empty() {
+        options.push(format!("--model {}", claude_model));
+    }
+    if claude_skip_permissions {
+        options.push("--dangerously-skip-permissions".to_string());
+    }
+    if !claude_launch_options.trim().is_empty() {
+        options.push(claude_launch_options.trim().to_string());
+    }
+    let claude_options = options.join(" ");
 
     // Execute AppleScript
     let result = execute_applescript(
@@ -680,6 +794,7 @@ async fn execute_codex_command(
     codex_model: String,
     codex_approval_mode: String,
     codex_enable_search: bool,
+    codex_launch_options: String,
     codex_command: String,
     auto_retry_on_rate_limit: bool,
     use_new_window: bool,
@@ -705,6 +820,14 @@ async fn execute_codex_command(
         let mut is_running = is_running_clone.lock().unwrap();
         *is_running = false;
         return Err(format!("ディレクトリが存在しません: {}", target_directory));
+    }
+
+    if use_new_window {
+        if let Err(err) = validate_launch_options("codex", &codex_launch_options) {
+            let mut is_running = is_running_clone.lock().unwrap();
+            *is_running = false;
+            return Err(err);
+        }
     }
 
     // Parse execution time
@@ -785,6 +908,7 @@ async fn execute_codex_command(
         &codex_model,
         &codex_approval_mode,
         codex_enable_search,
+        &codex_launch_options,
         &codex_command,
         auto_retry_on_rate_limit,
         use_new_window,
@@ -804,6 +928,7 @@ async fn execute_codex_applescript(
     codex_model: &str,
     codex_approval_mode: &str,
     codex_enable_search: bool,
+    codex_launch_options: &str,
     codex_command: &str,
     auto_retry_on_rate_limit: bool,
     use_new_window: bool,
@@ -815,6 +940,7 @@ async fn execute_codex_applescript(
         codex_model,
         codex_approval_mode,
         codex_enable_search,
+        codex_launch_options,
         codex_command,
         use_new_window,
     )
@@ -1082,6 +1208,7 @@ async fn execute_codex_applescript_internal(
     codex_model: &str,
     codex_approval_mode: &str,
     codex_enable_search: bool,
+    codex_launch_options: &str,
     codex_command: &str,
     use_new_window: bool,
 ) -> Result<String, String> {
@@ -1109,6 +1236,10 @@ async fn execute_codex_applescript_internal(
     // Search option
     if codex_enable_search {
         options.push("--search".to_string());
+    }
+
+    if !codex_launch_options.trim().is_empty() {
+        options.push(codex_launch_options.trim().to_string());
     }
 
     let options_str = options.join(" ");
@@ -1196,6 +1327,7 @@ async fn execute_gemini_command(
     gemini_approval_mode: String,
     gemini_output_format: String,
     gemini_include_directories: String,
+    gemini_launch_options: String,
     gemini_command: String,
     auto_retry_on_rate_limit: bool,
     use_new_window: bool,
@@ -1221,6 +1353,14 @@ async fn execute_gemini_command(
         let mut is_running = is_running_clone.lock().unwrap();
         *is_running = false;
         return Err(format!("ディレクトリが存在しません: {}", target_directory));
+    }
+
+    if use_new_window {
+        if let Err(err) = validate_launch_options("gemini", &gemini_launch_options) {
+            let mut is_running = is_running_clone.lock().unwrap();
+            *is_running = false;
+            return Err(err);
+        }
     }
 
     // Parse execution time
@@ -1302,6 +1442,7 @@ async fn execute_gemini_command(
         &gemini_approval_mode,
         &gemini_output_format,
         &gemini_include_directories,
+        &gemini_launch_options,
         &gemini_command,
         auto_retry_on_rate_limit,
         use_new_window,
@@ -1322,6 +1463,7 @@ async fn execute_gemini_applescript(
     gemini_approval_mode: &str,
     gemini_output_format: &str,
     gemini_include_directories: &str,
+    gemini_launch_options: &str,
     gemini_command: &str,
     auto_retry_on_rate_limit: bool,
     use_new_window: bool,
@@ -1334,6 +1476,7 @@ async fn execute_gemini_applescript(
         gemini_approval_mode,
         gemini_output_format,
         gemini_include_directories,
+        gemini_launch_options,
         gemini_command,
         use_new_window,
     )
@@ -1576,6 +1719,7 @@ async fn execute_gemini_applescript_internal(
     gemini_approval_mode: &str,
     gemini_output_format: &str,
     gemini_include_directories: &str,
+    gemini_launch_options: &str,
     gemini_command: &str,
     use_new_window: bool,
 ) -> Result<String, String> {
@@ -1606,6 +1750,10 @@ async fn execute_gemini_applescript_internal(
         "auto_edit" => options.push("--approval-mode auto_edit".to_string()),
         "yolo" => options.push("--yolo".to_string()),
         _ => {}
+    }
+
+    if !gemini_launch_options.trim().is_empty() {
+        options.push(gemini_launch_options.trim().to_string());
     }
 
     let options_str = options.join(" ");
@@ -1716,6 +1864,9 @@ fn register_schedule(
     execution_time: String,
     target_directory: String,
     command_args: String,
+    schedule_type: Option<String>,
+    interval_value: Option<u32>,
+    start_date: Option<String>,
 ) -> Result<ScheduleResult, String> {
     // Parse execution time (HH:MM format)
     let parts: Vec<&str> = execution_time.split(':').collect();
@@ -1758,6 +1909,27 @@ fn register_schedule(
         });
     }
 
+    let sched_type = schedule_type.unwrap_or_else(|| "daily".to_string());
+
+    // Basic validation for interval/weekly
+    if sched_type == "weekly" && start_date.is_none() {
+         return Ok(ScheduleResult {
+            success: false,
+            message: "毎週実行の場合は開始日を指定してください（曜日決定のため）".to_string(),
+            registered_tool: None,
+        });
+    }
+
+    if sched_type == "interval" {
+        if interval_value.is_none() || start_date.is_none() {
+            return Ok(ScheduleResult {
+                success: false,
+                message: "間隔実行の場合は間隔（日）と開始日を指定してください".to_string(),
+                registered_tool: None,
+            });
+        }
+    }
+
     // Create LaunchdConfig and generate plist
     let config = LaunchdConfig {
         tool: tool.clone(),
@@ -1765,14 +1937,25 @@ fn register_schedule(
         minute,
         target_directory,
         command_args,
+        schedule_type: sched_type.clone(),
+        interval_value,
+        start_date,
     };
 
     match plist_manager::create_plist(&config) {
-        Ok(_msg) => Ok(ScheduleResult {
-            success: true,
-            message: format!("スケジュール登録成功: 毎日 {}:{:02}", hour, minute),
-            registered_tool: Some(tool),
-        }),
+        Ok(_msg) => {
+            let msg = match sched_type.as_str() {
+                "daily" => format!("スケジュール登録成功: 毎日 {}:{:02}", hour, minute),
+                "weekly" => format!("スケジュール登録成功: 毎週 {}:{:02}", hour, minute),
+                "interval" => format!("スケジュール登録成功: {}日ごと {}:{:02}", interval_value.unwrap_or(0), hour, minute),
+                _ => format!("スケジュール登録成功: {}:{:02}", hour, minute),
+            };
+            Ok(ScheduleResult {
+                success: true,
+                message: msg,
+                registered_tool: Some(tool),
+            })
+        },
         Err(e) => Ok(ScheduleResult {
             success: false,
             message: format!("スケジュール登録エラー: {}", e),

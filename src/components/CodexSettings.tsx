@@ -1,11 +1,12 @@
 import { CodexToolSettings } from "../types/tools";
 import { Select } from "./ui/Select";
-import { Textarea } from "./ui/Input";
+import { Input, Textarea } from "./ui/Input";
 
 interface CodexSettingsProps {
   settings: CodexToolSettings;
   isRunning: boolean;
   useNewITermWindow: boolean;
+  launchOptionsError?: string;
   onSettingsChange: (settings: CodexToolSettings) => void;
 }
 
@@ -13,6 +14,7 @@ export function CodexSettings({
   settings,
   isRunning,
   useNewITermWindow,
+  launchOptionsError,
   onSettingsChange,
 }: CodexSettingsProps) {
   return (
@@ -146,6 +148,19 @@ export function CodexSettings({
               </p>
             </div>
           </div>
+
+          <Input
+            label="起動オプション（追加）"
+            type="text"
+            value={settings.launchOptions}
+            onChange={(e) =>
+              onSettingsChange({ ...settings, launchOptions: e.target.value })
+            }
+            disabled={isRunning}
+            placeholder="例: --verbose"
+            error={launchOptionsError}
+            helperText="モデル/承認/検索は上の項目で指定してください"
+          />
         </>
       )}
 
@@ -163,4 +178,3 @@ export function CodexSettings({
     </div>
   );
 }
-

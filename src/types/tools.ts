@@ -6,6 +6,7 @@ export interface BaseToolSettings {
   executionTime: string; // HH:MM format
   targetDirectory: string;
   command: string;
+  launchOptions: string;
   autoRetryOnRateLimit: boolean;
   useNewITermWindow: boolean;
 }
@@ -64,6 +65,7 @@ export const DEFAULT_CLAUDE_SETTINGS: ClaudeToolSettings = {
   executionTime: "",
   targetDirectory: "",
   command: "",
+  launchOptions: "",
   model: "claude-opus-4-5-20251101",
   dangerouslySkipPermissions: false,
   autoRetryOnRateLimit: false,
@@ -74,6 +76,7 @@ export const DEFAULT_CODEX_SETTINGS: CodexToolSettings = {
   executionTime: "",
   targetDirectory: "",
   command: "",
+  launchOptions: "",
   model: "gpt-5.2-codex",
   approvalMode: "suggest",
   enableSearch: false,
@@ -85,6 +88,7 @@ export const DEFAULT_GEMINI_SETTINGS: GeminiToolSettings = {
   executionTime: "",
   targetDirectory: "",
   command: "",
+  launchOptions: "",
   model: "",
   approvalMode: "default",
   outputFormat: "text",

@@ -17,6 +17,29 @@ ERROR_FILE="$LOG_DIR/claude-$(date +%Y%m%d-%H%M%S).error.log"
     echo "Options: $CLAUDE_OPTIONS"
 } >> "$LOG_FILE"
 
+# Check interval schedule if configured
+if [ "$SCHEDULE_TYPE" = "interval" ] && [ -n "$SCHEDULE_INTERVAL_DAYS" ] && [ -n "$SCHEDULE_START_DATE" ]; then
+    # Convert dates to seconds since epoch
+    # macOS 'date' command uses -j -f for parsing
+    START_TS=$(date -j -f "%Y-%m-%d" "$SCHEDULE_START_DATE" "+%s")
+    CURRENT_TS=$(date "+%s")
+    
+    # Calculate days difference
+    # 86400 seconds in a day
+    DIFF_SECONDS=$((CURRENT_TS - START_TS))
+    DIFF_DAYS=$((DIFF_SECONDS / 86400))
+    
+    # Check if we should run today
+    # Using modulo operator
+    MOD=$((DIFF_DAYS % SCHEDULE_INTERVAL_DAYS))
+    
+    if [ $MOD -ne 0 ]; then
+        echo "=== Skipping execution: Today is not an interval match (Start: $SCHEDULE_START_DATE, Interval: $SCHEDULE_INTERVAL_DAYS days, Diff: $DIFF_DAYS days) ===" >> "$LOG_FILE"
+        exit 0
+    fi
+    echo "=== Interval matched: Proceeding with execution (Start: $SCHEDULE_START_DATE, Interval: $SCHEDULE_INTERVAL_DAYS days, Diff: $DIFF_DAYS days) ===" >> "$LOG_FILE"
+fi
+
 # Execute AppleScript to launch iTerm and run Claude
 osascript <<APPLESCRIPT >> "$LOG_FILE" 2>> "$ERROR_FILE"
 tell application "iTerm"

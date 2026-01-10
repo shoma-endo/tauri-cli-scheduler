@@ -62,6 +62,15 @@ function App() {
             executionTime: defaultTime,
           };
         }
+        if (parsed.claude && typeof parsed.claude.launchOptions !== "string") {
+          parsed.claude.launchOptions = "";
+        }
+        if (parsed.codex && typeof parsed.codex.launchOptions !== "string") {
+          parsed.codex.launchOptions = "";
+        }
+        if (parsed.gemini && typeof parsed.gemini.launchOptions !== "string") {
+          parsed.gemini.launchOptions = "";
+        }
         if (
           parsed.claude &&
           typeof parsed.claude.dangerouslySkipPermissions !== "boolean"
@@ -193,6 +202,11 @@ function App() {
     codex: null,
     gemini: null,
   });
+  const [launchOptionsErrors, setLaunchOptionsErrors] = useState<Record<ToolType, string>>({
+    claude: "",
+    codex: "",
+    gemini: "",
+  });
 
   // 現在のタブの設定を取得
   const currentSettings = (() => {
@@ -211,6 +225,80 @@ function App() {
   const activeTab = appSettings.activeTab;
   const activeToolName = TOOL_DISPLAY_NAMES[activeTab];
   const isCurrentTabRunning = runningStatus[activeTab];
+
+  function hasBalancedQuotes(input: string) {
+    let inSingle = false;
+    let inDouble = false;
+    let escaped = false;
+
+    for (const char of input) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === "'" && !inDouble) {
+        inSingle = !inSingle;
+        continue;
+      }
+      if (char === '"' && !inSingle) {
+        inDouble = !inDouble;
+      }
+    }
+
+    return !inSingle && !inDouble && !escaped;
+  }
+
+  function containsFlag(input: string, flag: string) {
+    const source = input;
+    let index = 0;
+    while (index < source.length) {
+      const found = source.indexOf(flag, index);
+      if (found === -1) return false;
+      const before = found === 0 ? " " : source[found - 1];
+      const afterIndex = found + flag.length;
+      const after = afterIndex >= source.length ? " " : source[afterIndex];
+      const beforeOk = /\s/.test(before);
+      const afterOk = /\s|=/.test(after);
+      if (beforeOk && afterOk) return true;
+      index = found + flag.length;
+    }
+    return false;
+  }
+
+  function validateLaunchOptions(tool: ToolType, options: string) {
+    if (!options.trim()) return "";
+    if (/[\r\n]/.test(options)) {
+      return "改行は使用できません";
+    }
+    if (!hasBalancedQuotes(options)) {
+      return "引用符の数が正しくありません";
+    }
+
+    const reservedFlags: Record<ToolType, string[]> = {
+      claude: ["--model", "--dangerously-skip-permissions"],
+      codex: ["--model", "--sandbox", "--ask-for-approval", "--full-auto", "--search"],
+      gemini: [
+        "--model",
+        "--output-format",
+        "--include-directories",
+        "--approval-mode",
+        "--yolo",
+        "--prompt",
+      ],
+    };
+
+    for (const flag of reservedFlags[tool]) {
+      if (containsFlag(options, flag)) {
+        return `「${flag}」はUIの設定を使用してください`;
+      }
+    }
+
+    return "";
+  }
 
   // 設定をlocalStorageに保存
   useEffect(() => {
@@ -447,6 +535,18 @@ function App() {
       return;
     }
 
+    if (currentSettings.useNewITermWindow) {
+      const optionsError = validateLaunchOptions(tool, currentSettings.launchOptions);
+      if (optionsError) {
+        setLaunchOptionsErrors((prev) => ({ ...prev, [tool]: optionsError }));
+        setStatus((prev) => ({
+          ...prev,
+          [tool]: `エラー: 起動オプションが不正です（${optionsError}）`,
+        }));
+        return;
+      }
+    }
+
     // ツールの実行状態を更新
     setRunningStatus((prev) => ({ ...prev, [tool]: true }));
     setStatus((prev) => ({ ...prev, [tool]: "待機中..." }));
@@ -463,17 +563,12 @@ function App() {
       if (tool === "claude") {
         const claudeSettings = { ...appSettings.claude };
         executionSettings = claudeSettings;
-        const claudeOptions: string[] = [];
-        if (claudeSettings.model) {
-          claudeOptions.push(`--model ${claudeSettings.model}`);
-        }
-        if (claudeSettings.dangerouslySkipPermissions) {
-          claudeOptions.push("--dangerously-skip-permissions");
-        }
         result = await invoke<ExecutionResult>("execute_claude_command", {
           executionTime: claudeSettings.executionTime,
           targetDirectory: claudeSettings.targetDirectory,
-          claudeOptions: claudeOptions.join(" "),
+          claudeModel: claudeSettings.model,
+          claudeSkipPermissions: claudeSettings.dangerouslySkipPermissions,
+          claudeLaunchOptions: claudeSettings.launchOptions,
           claudeCommand: claudeSettings.command,
           autoRetryOnRateLimit: claudeSettings.autoRetryOnRateLimit,
           useNewWindow: claudeSettings.useNewITermWindow,
@@ -487,6 +582,7 @@ function App() {
           codexModel: codexSettings.model,
           codexApprovalMode: codexSettings.approvalMode,
           codexEnableSearch: codexSettings.enableSearch,
+          codexLaunchOptions: codexSettings.launchOptions,
           codexCommand: codexSettings.command,
           autoRetryOnRateLimit: codexSettings.autoRetryOnRateLimit,
           useNewWindow: codexSettings.useNewITermWindow,
@@ -501,6 +597,7 @@ function App() {
           geminiApprovalMode: geminiSettings.approvalMode,
           geminiOutputFormat: geminiSettings.outputFormat,
           geminiIncludeDirectories: geminiSettings.includeDirectories,
+          geminiLaunchOptions: geminiSettings.launchOptions,
           geminiCommand: geminiSettings.command,
           autoRetryOnRateLimit: geminiSettings.autoRetryOnRateLimit,
           useNewWindow: geminiSettings.useNewITermWindow,
@@ -607,16 +704,34 @@ function App() {
   // Claude設定変更ハンドラー
   function handleClaudeSettingsChange(settings: ClaudeToolSettings) {
     setAppSettings({ ...appSettings, claude: settings });
+    if (!settings.useNewITermWindow) {
+      setLaunchOptionsErrors((prev) => ({ ...prev, claude: "" }));
+      return;
+    }
+    const optionsError = validateLaunchOptions("claude", settings.launchOptions);
+    setLaunchOptionsErrors((prev) => ({ ...prev, claude: optionsError }));
   }
 
   // Codex設定変更ハンドラー
   function handleCodexSettingsChange(settings: CodexToolSettings) {
     setAppSettings({ ...appSettings, codex: settings });
+    if (!settings.useNewITermWindow) {
+      setLaunchOptionsErrors((prev) => ({ ...prev, codex: "" }));
+      return;
+    }
+    const optionsError = validateLaunchOptions("codex", settings.launchOptions);
+    setLaunchOptionsErrors((prev) => ({ ...prev, codex: optionsError }));
   }
 
   // Gemini設定変更ハンドラー
   function handleGeminiSettingsChange(settings: GeminiToolSettings) {
     setAppSettings({ ...appSettings, gemini: settings });
+    if (!settings.useNewITermWindow) {
+      setLaunchOptionsErrors((prev) => ({ ...prev, gemini: "" }));
+      return;
+    }
+    const optionsError = validateLaunchOptions("gemini", settings.launchOptions);
+    setLaunchOptionsErrors((prev) => ({ ...prev, gemini: optionsError }));
   }
 
   // 共通設定変更ハンドラー
@@ -668,6 +783,9 @@ function App() {
         ...appSettings,
         claude: { ...appSettings.claude, useNewITermWindow: value },
       });
+      if (!value) {
+        setLaunchOptionsErrors((prev) => ({ ...prev, claude: "" }));
+      }
       return;
     }
     if (appSettings.activeTab === "codex") {
@@ -675,12 +793,18 @@ function App() {
         ...appSettings,
         codex: { ...appSettings.codex, useNewITermWindow: value },
       });
+      if (!value) {
+        setLaunchOptionsErrors((prev) => ({ ...prev, codex: "" }));
+      }
       return;
     }
     setAppSettings({
       ...appSettings,
       gemini: { ...appSettings.gemini, useNewITermWindow: value },
     });
+    if (!value) {
+      setLaunchOptionsErrors((prev) => ({ ...prev, gemini: "" }));
+    }
   }
 
   function handleAutoRetryOnRateLimitChange(value: boolean) {
@@ -704,19 +828,28 @@ function App() {
     });
   }
 
-  function handleScheduleRegister(success: boolean) {
+  async function handleScheduleRegister(success: boolean) {
     const tool = appSettings.activeTab;
     if (success) {
-      // Update local state
-      const updated = { ...registeredSchedules };
-      const schedule: RegisteredSchedule = {
-        tool,
-        execution_time: currentSettings.executionTime,
-        created_at: new Date().toISOString(),
-      };
-      updated[tool] = schedule;
-      setRegisteredSchedules(updated);
-      setStatus((prev) => ({ ...prev, [tool]: "スケジュール登録成功: Launchdに登録しました" }));
+      // Re-fetch schedules from backend to ensure we have the correct data including new fields
+      try {
+        const schedules = await invoke<RegisteredSchedule[]>("get_registered_schedules");
+        const updated: Record<ToolType, RegisteredSchedule | null> = {
+          claude: null,
+          codex: null,
+          gemini: null,
+        };
+        schedules.forEach((s) => {
+          if (s.tool === "claude" || s.tool === "codex" || s.tool === "gemini") {
+            updated[s.tool as ToolType] = s;
+          }
+        });
+        setRegisteredSchedules(updated);
+        setStatus((prev) => ({ ...prev, [tool]: "スケジュール登録成功" }));
+      } catch (error) {
+        console.error("Failed to fetch schedules after registration:", error);
+        setStatus((prev) => ({ ...prev, [tool]: "スケジュール登録成功（表示更新失敗）" }));
+      }
     } else {
       setStatus((prev) => ({ ...prev, [tool]: "スケジュール登録失敗" }));
     }
@@ -768,6 +901,7 @@ function App() {
               onClaudeSettingsChange={handleClaudeSettingsChange}
               onCodexSettingsChange={handleCodexSettingsChange}
               onGeminiSettingsChange={handleGeminiSettingsChange}
+              launchOptionsErrors={launchOptionsErrors}
               registeredSchedule={registeredSchedules[appSettings.activeTab]}
               onScheduleRegister={handleScheduleRegister}
               onScheduleUnregister={handleScheduleUnregister}
