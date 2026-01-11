@@ -19,7 +19,7 @@ macOS上でiTermを通じて、指定した時刻にClaude Code / Codex CLI / Ge
 - 📱 **レスポンシブ設計**: モバイル～デスクトップで最適な表示
 - 🔧 **拡張可能な設計**: 将来の新しいCLIツール追加に対応
 
-![Tauri CLI Scheduler](https://storage.googleapis.com/zenn-user-upload/84e3d8897c85-20250623.png)
+![Tauri CLI Scheduler](assets/screenshot.png)
 
 ## 必要な環境
 
