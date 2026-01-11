@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { RegisteredSchedule, ScheduleResult, ScheduleType } from "../types/schedule";
+import { RegisteredSchedule, ScheduleHistoryEntry, ScheduleResult, ScheduleType } from "../types/schedule";
 import { Button } from "./ui/Button";
 import { Input, Textarea } from "./ui/Input";
+import { Select } from "./ui/Select";
 
 interface ScheduleManagerProps {
   tool: string;
@@ -49,6 +50,9 @@ export function ScheduleManager({
   const [editScheduleTime, setEditScheduleTime] = useState<string>(executionTime);
   const [editScheduleCommand, setEditScheduleCommand] = useState<string>("");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [historyScheduleId, setHistoryScheduleId] = useState<string>("");
+  const [historyEntries, setHistoryEntries] = useState<ScheduleHistoryEntry[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
   useEffect(() => {
     setScheduleTime(executionTime);
@@ -62,6 +66,52 @@ export function ScheduleManager({
       return a.schedule_type.localeCompare(b.schedule_type);
     });
   }, [registeredSchedules]);
+
+  useEffect(() => {
+    if (registeredSchedules.length === 0) {
+      setHistoryScheduleId("");
+      setHistoryEntries([]);
+      return;
+    }
+    if (
+      !historyScheduleId ||
+      !registeredSchedules.some((schedule) => schedule.schedule_id === historyScheduleId)
+    ) {
+      setHistoryScheduleId(registeredSchedules[0].schedule_id);
+    }
+  }, [registeredSchedules, historyScheduleId]);
+
+  useEffect(() => {
+    if (!historyScheduleId) {
+      setHistoryEntries([]);
+      return;
+    }
+
+    let cancelled = false;
+    setIsHistoryLoading(true);
+    invoke<ScheduleHistoryEntry[]>("get_schedule_history", {
+      scheduleId: historyScheduleId,
+    })
+      .then((entries) => {
+        if (!cancelled) {
+          setHistoryEntries(entries);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHistoryEntries([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsHistoryLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [historyScheduleId]);
 
   const handleRegisterSchedule = async () => {
     if (!targetDirectory.trim()) {
@@ -199,6 +249,27 @@ export function ScheduleManager({
     }
   };
 
+  const formatHistoryStatus = (status: string) => {
+    switch (status) {
+      case "success":
+        return "成功";
+      case "failure":
+        return "失敗";
+      case "skipped":
+        return "スキップ";
+      default:
+        return status;
+    }
+  };
+
+  const formatHistoryTimestamp = (timestamp: string) => {
+    const parsed = new Date(timestamp);
+    if (Number.isNaN(parsed.getTime())) {
+      return timestamp;
+    }
+    return parsed.toLocaleString();
+  };
+
   return (
     <div className="space-y-4">
       <div className="space-y-3">
@@ -255,6 +326,49 @@ export function ScheduleManager({
                     削除
                   </Button>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3 rounded-md border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-4">
+        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          実行履歴
+        </p>
+        <Select
+          label="対象スケジュール"
+          value={historyScheduleId}
+          onChange={(e) => setHistoryScheduleId(e.target.value)}
+          options={sortedSchedules.map((schedule) => ({
+            value: schedule.schedule_id,
+            label: `${schedule.title || "無題のスケジュール"} (${schedule.execution_time})`,
+          }))}
+          disabled={sortedSchedules.length === 0 || isRunning}
+        />
+        {sortedSchedules.length === 0 ? (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            登録済みスケジュールがありません。
+          </p>
+        ) : isHistoryLoading ? (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            履歴を読み込み中...
+          </p>
+        ) : historyEntries.length === 0 ? (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            履歴がありません。
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {historyEntries.map((entry, index) => (
+              <div
+                key={`${entry.timestamp}-${index}`}
+                className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300"
+              >
+                <span>{formatHistoryTimestamp(entry.timestamp)}</span>
+                <span className="font-medium">
+                  {formatHistoryStatus(entry.status)}
+                </span>
               </div>
             ))}
           </div>

@@ -17,4 +17,11 @@ export interface ScheduleResult {
   schedule_id?: string;
 }
 
+export interface ScheduleHistoryEntry {
+  timestamp: string;
+  schedule_id: string;
+  tool: string;
+  status: string;
+}
+
 export type ScheduleType = 'daily' | 'weekly' | 'interval';

@@ -8,6 +8,17 @@ LOG_DIR="$HOME/.config/tauri-cli-scheduler/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/codex-$(date +%Y%m%d-%H%M%S).log"
 ERROR_FILE="$LOG_DIR/codex-$(date +%Y%m%d-%H%M%S).error.log"
+HISTORY_FILE="$HOME/.config/tauri-cli-scheduler/schedule-history.jsonl"
+
+append_history() {
+    local status="$1"
+    if [ -z "$SCHEDULE_ID" ]; then
+        return
+    fi
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    printf '%s\n' "{\"timestamp\":\"$timestamp\",\"schedule_id\":\"$SCHEDULE_ID\",\"tool\":\"$TOOL\",\"status\":\"$status\"}" >> "$HISTORY_FILE"
+}
 
 # Log execution start
 {
@@ -35,6 +46,7 @@ if [ "$SCHEDULE_TYPE" = "interval" ] && [ -n "$SCHEDULE_INTERVAL_DAYS" ] && [ -n
     
     if [ $MOD -ne 0 ]; then
         echo "=== Skipping execution: Today is not an interval match (Start: $SCHEDULE_START_DATE, Interval: $SCHEDULE_INTERVAL_DAYS days, Diff: $DIFF_DAYS days) ===" >> "$LOG_FILE"
+        append_history "skipped"
         exit 0
     fi
     echo "=== Interval matched: Proceeding with execution (Start: $SCHEDULE_START_DATE, Interval: $SCHEDULE_INTERVAL_DAYS days, Diff: $DIFF_DAYS days) ===" >> "$LOG_FILE"
@@ -62,8 +74,10 @@ RESULT=$?
 
 if [ $RESULT -eq 0 ]; then
     echo "=== Codex execution completed successfully at $(date) ===" >> "$LOG_FILE"
+    append_history "success"
 else
     echo "=== Codex execution failed with error code $RESULT at $(date) ===" >> "$ERROR_FILE"
+    append_history "failure"
 fi
 
 exit $RESULT

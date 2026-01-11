@@ -2,6 +2,7 @@ use chrono::{Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+use std::{fs::File, io::BufRead, io::BufReader};
 use std::time::Duration;
 use tauri::{Emitter, State};
 use tokio::time::sleep;
@@ -145,6 +146,14 @@ struct ScheduleResult {
     registered_tool: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     schedule_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ScheduleHistoryEntry {
+    timestamp: String,
+    schedule_id: String,
+    tool: String,
+    status: String,
 }
 
 #[tauri::command]
@@ -2140,6 +2149,49 @@ fn get_registered_schedules() -> Result<Vec<RegisteredSchedule>, String> {
     plist_manager::get_registered_schedules()
 }
 
+#[tauri::command]
+fn get_schedule_history(schedule_id: String) -> Result<Vec<ScheduleHistoryEntry>, String> {
+    if schedule_id.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let config_dir = dirs::config_dir()
+        .ok_or("Could not determine config directory".to_string())?
+        .join("tauri-cli-scheduler");
+    let history_path = config_dir.join("schedule-history.jsonl");
+
+    if !history_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let file =
+        File::open(&history_path).map_err(|e| format!("Failed to read history file: {}", e))?;
+    let reader = BufReader::new(file);
+
+    let mut entries: Vec<ScheduleHistoryEntry> = Vec::new();
+    for line in reader.lines() {
+        let line = match line {
+            Ok(val) => val,
+            Err(_) => continue,
+        };
+        let entry: ScheduleHistoryEntry = match serde_json::from_str(&line) {
+            Ok(val) => val,
+            Err(_) => continue,
+        };
+        if entry.schedule_id == schedule_id {
+            entries.push(entry);
+        }
+    }
+
+    const MAX_ENTRIES: usize = 10;
+    if entries.len() > MAX_ENTRIES {
+        entries = entries.split_off(entries.len() - MAX_ENTRIES);
+    }
+    entries.reverse();
+
+    Ok(entries)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -2169,7 +2221,8 @@ pub fn run() {
             register_schedule,
             unregister_schedule,
             update_schedule,
-            get_registered_schedules
+            get_registered_schedules,
+            get_schedule_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
