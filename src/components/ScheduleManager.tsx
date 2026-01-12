@@ -54,6 +54,15 @@ export function ScheduleManager({
   const [historyEntries, setHistoryEntries] = useState<ScheduleHistoryEntry[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
+  const resetNewScheduleForm = () => {
+    setScheduleTitle("");
+    setScheduleCommand("");
+    setScheduleType("daily");
+    setIntervalValue(3);
+    setStartDate(getTodayDateString());
+    setScheduleTime(executionTime);
+  };
+
   useEffect(() => {
     setScheduleTime(executionTime);
     setEditScheduleTime(executionTime);
@@ -140,6 +149,7 @@ export function ScheduleManager({
 
       setMessage(result.message);
       if (result.success) {
+        resetNewScheduleForm();
         onScheduleRegister(true);
       } else {
         onScheduleRegister(false);
