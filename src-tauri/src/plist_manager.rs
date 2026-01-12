@@ -160,15 +160,21 @@ pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
     match config.tool.as_str() {
         "claude" => {
             env_vars.insert("CLAUDE_COMMAND".to_string(), Value::String(config.command_args.clone()));
-            env_vars.insert("CLAUDE_OPTIONS".to_string(), Value::String("--model opus".to_string()));
+            env_vars.insert(
+                "CLAUDE_OPTIONS".to_string(),
+                Value::String("--model opus --dangerously-skip-permissions".to_string()),
+            );
         }
         "codex" => {
             env_vars.insert("CODEX_COMMAND".to_string(), Value::String(config.command_args.clone()));
-            env_vars.insert("CODEX_OPTIONS".to_string(), Value::String("--model gpt-5.2-codex".to_string()));
+            env_vars.insert(
+                "CODEX_OPTIONS".to_string(),
+                Value::String("--model gpt-5.2-codex --full-auto".to_string()),
+            );
         }
         "gemini" => {
             env_vars.insert("GEMINI_COMMAND".to_string(), Value::String(config.command_args.clone()));
-            env_vars.insert("GEMINI_OPTIONS".to_string(), Value::String("".to_string()));
+            env_vars.insert("GEMINI_OPTIONS".to_string(), Value::String("--yolo".to_string()));
         }
         _ => {}
     }

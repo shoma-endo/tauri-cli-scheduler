@@ -441,14 +441,17 @@ export function ScheduleManager({
             />
           </div>
 
-          <Textarea
-            label="スケジュール命令"
-            value={editScheduleCommand}
-            onChange={(e) => setEditScheduleCommand(e.target.value)}
-            disabled={isRunning}
-            placeholder="例: 仕様書を要約してください"
-            rows={4}
-          />
+        <Textarea
+          label="スケジュール命令"
+          value={editScheduleCommand}
+          onChange={(e) => setEditScheduleCommand(e.target.value)}
+          disabled={isRunning}
+          placeholder="例: 仕様書を要約してください"
+          rows={4}
+        />
+        <p className="text-xs text-gray-500">
+          ※スケジュール実行時の承認モードは常に完全自動で固定されています
+        </p>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -608,6 +611,9 @@ export function ScheduleManager({
           placeholder="例: 仕様書を要約してください"
           rows={4}
         />
+        <p className="text-xs text-gray-500">
+          ※スケジュール実行時の承認モードは常に完全自動で固定されています
+        </p>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
