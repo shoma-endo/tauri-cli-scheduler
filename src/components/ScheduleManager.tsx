@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { RegisteredSchedule, ScheduleHistoryEntry, ScheduleResult, ScheduleType } from "../types/schedule";
 import { Button } from "./ui/Button";
@@ -42,6 +43,7 @@ export function ScheduleManager({
   const [scheduleTime, setScheduleTime] = useState<string>(executionTime);
   const [scheduleTitle, setScheduleTitle] = useState<string>("");
   const [scheduleCommand, setScheduleCommand] = useState<string>("");
+  const [scheduleTargetDirectory, setScheduleTargetDirectory] = useState<string>(targetDirectory);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState<string>("");
   const [editScheduleType, setEditScheduleType] = useState<ScheduleType>("daily");
@@ -49,6 +51,7 @@ export function ScheduleManager({
   const [editStartDate, setEditStartDate] = useState<string>(getTodayDateString());
   const [editScheduleTime, setEditScheduleTime] = useState<string>(executionTime);
   const [editScheduleCommand, setEditScheduleCommand] = useState<string>("");
+  const [editTargetDirectory, setEditTargetDirectory] = useState<string>(targetDirectory);
   const [isUpdating, setIsUpdating] = useState(false);
   const [historyScheduleId, setHistoryScheduleId] = useState<string>("");
   const [historyEntries, setHistoryEntries] = useState<ScheduleHistoryEntry[]>([]);
@@ -61,12 +64,38 @@ export function ScheduleManager({
     setIntervalValue(3);
     setStartDate(getTodayDateString());
     setScheduleTime(executionTime);
+    setScheduleTargetDirectory(targetDirectory);
   };
 
   useEffect(() => {
     setScheduleTime(executionTime);
     setEditScheduleTime(executionTime);
   }, [executionTime]);
+
+  useEffect(() => {
+    if (!scheduleTargetDirectory.trim()) {
+      setScheduleTargetDirectory(targetDirectory);
+    }
+    if (!editTargetDirectory.trim()) {
+      setEditTargetDirectory(targetDirectory);
+    }
+  }, [targetDirectory, scheduleTargetDirectory, editTargetDirectory]);
+
+  const selectDirectory = async (current: string, onSelect: (dir: string) => void) => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        defaultPath: current,
+        title: "実行対象ディレクトリを選択",
+      });
+      if (selected && typeof selected === "string") {
+        onSelect(selected);
+      }
+    } catch (error) {
+      console.error("Directory selection error:", error);
+    }
+  };
 
   const sortedSchedules = useMemo(() => {
     return [...registeredSchedules].sort((a, b) => {
@@ -123,7 +152,7 @@ export function ScheduleManager({
   }, [historyScheduleId]);
 
   const handleRegisterSchedule = async () => {
-    if (!targetDirectory.trim()) {
+    if (!scheduleTargetDirectory.trim()) {
       setMessage("エラー: 実行対象ディレクトリを指定してください");
       return;
     }
@@ -139,7 +168,7 @@ export function ScheduleManager({
       const result = await invoke<ScheduleResult>("register_schedule", {
         tool,
         executionTime: scheduleTime,
-        targetDirectory,
+        targetDirectory: scheduleTargetDirectory,
         commandArgs: scheduleCommand,
         title: scheduleTitle.trim() || "無題のスケジュール",
         scheduleType,
@@ -171,6 +200,7 @@ export function ScheduleManager({
     setEditIntervalValue(schedule.interval_value ?? 3);
     setEditStartDate(schedule.start_date ?? getTodayDateString());
     setEditScheduleCommand(schedule.command_args ?? "");
+    setEditTargetDirectory(schedule.target_directory ?? targetDirectory);
   };
 
   const cancelEditing = () => {
@@ -179,7 +209,7 @@ export function ScheduleManager({
 
   const handleUpdateSchedule = async () => {
     if (!editingScheduleId) return;
-    if (!targetDirectory.trim()) {
+    if (!editTargetDirectory.trim()) {
       setMessage("エラー: 実行対象ディレクトリを指定してください");
       return;
     }
@@ -196,7 +226,7 @@ export function ScheduleManager({
         tool,
         scheduleId: editingScheduleId,
         executionTime: editScheduleTime,
-        targetDirectory,
+        targetDirectory: editTargetDirectory,
         commandArgs: editScheduleCommand,
         title: editTitle.trim() || "無題のスケジュール",
         scheduleType: editScheduleType,
@@ -318,6 +348,9 @@ export function ScheduleManager({
                         ? `曜日基準: ${schedule.start_date}`
                         : "繰り返し: 毎日"}
                   </p>
+                  <p className="text-xs text-gray-500 break-all">
+                    実行対象: {schedule.target_directory || "未指定"}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -417,6 +450,29 @@ export function ScheduleManager({
             rows={4}
           />
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              実行対象ディレクトリ
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Input
+                type="text"
+                value={editTargetDirectory}
+                readOnly
+                disabled={isRunning}
+                className="flex-1 min-w-[220px]"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => selectDirectory(editTargetDirectory, setEditTargetDirectory)}
+                disabled={isRunning}
+              >
+                フォルダ選択
+              </Button>
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -515,7 +571,7 @@ export function ScheduleManager({
               disabled={
                 isRunning ||
                 isUpdating ||
-                !targetDirectory.trim() ||
+                !editTargetDirectory.trim() ||
                 !editScheduleCommand.trim()
               }
               isLoading={isUpdating}
@@ -552,6 +608,29 @@ export function ScheduleManager({
           placeholder="例: 仕様書を要約してください"
           rows={4}
         />
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            実行対象ディレクトリ
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              type="text"
+              value={scheduleTargetDirectory}
+              readOnly
+              disabled={isRunning}
+              className="flex-1 min-w-[220px]"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => selectDirectory(scheduleTargetDirectory, setScheduleTargetDirectory)}
+              disabled={isRunning}
+            >
+              フォルダ選択
+            </Button>
+          </div>
+        </div>
 
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -654,7 +733,7 @@ export function ScheduleManager({
             disabled={
               isRunning ||
               isRegistering ||
-              !targetDirectory.trim() ||
+              !scheduleTargetDirectory.trim() ||
               !scheduleCommand.trim()
             }
             isLoading={isRegistering}
