@@ -45,6 +45,7 @@
 **Build Artifacts:**
 *   DMG: `src-tauri/target/release/bundle/dmg/Tauri CLI Scheduler_<version>_aarch64.dmg`
 *   App: `src-tauri/target/release/bundle/macos/Tauri CLI Scheduler.app`
+*   プログラムを変更した場合は最後に必ず `npm run tauri:build` を実行し、ビルド成果物（DMG）のローカルパスをURLで共有すること。
 
 ## Development Conventions
 

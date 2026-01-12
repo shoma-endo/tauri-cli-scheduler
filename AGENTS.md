@@ -16,6 +16,7 @@
 - `npm run fmt`: Format TS/TSX/CSS with Prettier.
 - `npm run tauri:fmt`: Format Rust code with `cargo fmt`.
 - `npm run pretauri:build`: Auto-update version (YY.M.D) before building.
+- プログラムを変更した場合は最後に必ず `npm run tauri:build` を実行し、ビルド成果物（DMG）のローカルパスをURLで共有すること。
 
 ## Coding Style & Naming Conventions
 - TypeScript/React uses Prettier defaults (2-space indentation) and strict TS settings.

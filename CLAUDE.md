@@ -45,6 +45,7 @@ cargo clippy           # Run Rust linter
 7. **Build Output**: ビルド成功後、生成されたファイルのパスを必ず表示してください:
    - DMG: `src-tauri/target/release/bundle/dmg/Tauri CLI Scheduler_<version>_aarch64.dmg`
    - App: `src-tauri/target/release/bundle/macos/Tauri CLI Scheduler.app`
+8. プログラムを変更した場合は最後に必ず `npm run tauri:build` を実行し、ビルド成果物（DMG）のローカルパスをURLで共有すること。
 
 ## Architecture
 
