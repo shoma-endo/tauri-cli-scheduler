@@ -310,6 +310,89 @@ export function ScheduleManager({
     return parsed.toLocaleString();
   };
 
+  const parseScheduleTime = (time: string) => {
+    const [hoursText, minutesText] = time.split(":");
+    const hours = Number(hoursText);
+    const minutes = Number(minutesText);
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes)) {
+      return null;
+    }
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      return null;
+    }
+    return { hours, minutes };
+  };
+
+  const toDateAtTime = (date: Date, hours: number, minutes: number) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0);
+
+  const getNextExecution = (schedule: RegisteredSchedule) => {
+    const time = parseScheduleTime(schedule.execution_time);
+    if (!time) return null;
+
+    const now = new Date();
+    const todayAtTime = toDateAtTime(now, time.hours, time.minutes);
+
+    if (schedule.schedule_type === "daily") {
+      if (todayAtTime > now) return todayAtTime;
+      return new Date(todayAtTime.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    if (schedule.schedule_type === "weekly") {
+      if (!schedule.start_date) return null;
+      const startDate = new Date(`${schedule.start_date}T00:00:00`);
+      if (Number.isNaN(startDate.getTime())) return null;
+
+      const targetDay = startDate.getDay();
+      const today = now.getDay();
+      let diff = (targetDay - today + 7) % 7;
+      const candidate = new Date(todayAtTime);
+      if (diff === 0 && candidate <= now) {
+        diff = 7;
+      }
+      candidate.setDate(candidate.getDate() + diff);
+      return candidate;
+    }
+
+    if (schedule.schedule_type === "interval") {
+      if (!schedule.start_date || !schedule.interval_value) return null;
+      const startMidnight = new Date(`${schedule.start_date}T00:00:00`);
+      if (Number.isNaN(startMidnight.getTime())) return null;
+
+      const intervalDays = schedule.interval_value;
+      const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const daysSinceStart = Math.floor(
+        (nowMidnight.getTime() - startMidnight.getTime()) / (24 * 60 * 60 * 1000)
+      );
+
+      let nextDate = new Date(startMidnight);
+      if (daysSinceStart >= 0) {
+        const offset = daysSinceStart % intervalDays;
+        const daysUntil = offset === 0 ? 0 : intervalDays - offset;
+        nextDate = new Date(nowMidnight);
+        nextDate.setDate(nextDate.getDate() + daysUntil);
+      }
+
+      let candidate = toDateAtTime(nextDate, time.hours, time.minutes);
+      if (candidate <= now) {
+        nextDate.setDate(nextDate.getDate() + intervalDays);
+        candidate = toDateAtTime(nextDate, time.hours, time.minutes);
+      }
+      return candidate;
+    }
+
+    return null;
+  };
+
+  const formatNextExecution = (schedule: RegisteredSchedule) => {
+    const next = getNextExecution(schedule);
+    if (!next) return "不明";
+    return next.toLocaleString("ja-JP", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="space-y-3">
@@ -347,6 +430,9 @@ export function ScheduleManager({
                       : schedule.schedule_type === "weekly" && schedule.start_date
                         ? `曜日基準: ${schedule.start_date}`
                         : "繰り返し: 毎日"}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    次回実行: {formatNextExecution(schedule)}
                   </p>
                   <p className="text-xs text-gray-500 break-all">
                     実行対象: {schedule.target_directory || "未指定"}
