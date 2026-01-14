@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
+use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaunchdConfig {
@@ -40,6 +41,13 @@ fn get_config_dir() -> Result<PathBuf, String> {
         .map(|p| p.join("tauri-cli-scheduler"))
 }
 
+/// Get the LaunchAgents directory (per-user)
+fn get_launch_agents_dir() -> Result<PathBuf, String> {
+    dirs::home_dir()
+        .ok_or("Could not determine home directory".to_string())
+        .map(|p| p.join("Library/LaunchAgents"))
+}
+
 /// Ensure the config directory exists
 pub fn ensure_config_dir() -> Result<PathBuf, String> {
     let config_dir = get_config_dir()?;
@@ -60,6 +68,15 @@ fn get_legacy_plist_path(tool: &str) -> Result<PathBuf, String> {
     Ok(config_dir.join(format!("com.shoma.tauri-cli-scheduler.{}.plist", tool)))
 }
 
+/// Get the LaunchAgents plist file path for a specific tool (single-schedule mode)
+fn get_legacy_launch_agents_plist_path(tool: &str) -> Result<PathBuf, String> {
+    let launch_agents_dir = get_launch_agents_dir()?;
+    Ok(launch_agents_dir.join(format!(
+        "com.shoma.tauri-cli-scheduler.{}.plist",
+        tool
+    )))
+}
+
 /// Get the plist file path for a specific schedule
 fn get_plist_path(tool: &str, schedule_id: &str) -> Result<PathBuf, String> {
     let config_dir = get_config_dir()?;
@@ -67,6 +84,78 @@ fn get_plist_path(tool: &str, schedule_id: &str) -> Result<PathBuf, String> {
         "com.shoma.tauri-cli-scheduler.{}.{}.plist",
         tool, schedule_id
     )))
+}
+
+/// Get the LaunchAgents plist file path for a specific schedule
+fn get_launch_agents_plist_path(tool: &str, schedule_id: &str) -> Result<PathBuf, String> {
+    let launch_agents_dir = get_launch_agents_dir()?;
+    Ok(launch_agents_dir.join(format!(
+        "com.shoma.tauri-cli-scheduler.{}.{}.plist",
+        tool, schedule_id
+    )))
+}
+
+fn get_user_uid() -> Result<String, String> {
+    if let Ok(uid) = std::env::var("UID") {
+        if !uid.trim().is_empty() {
+            return Ok(uid);
+        }
+    }
+    let output = Command::new("id")
+        .arg("-u")
+        .output()
+        .map_err(|e| format!("Failed to run id -u: {}", e))?;
+    if !output.status.success() {
+        return Err("Failed to resolve user id".to_string());
+    }
+    let uid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if uid.is_empty() {
+        Err("Failed to resolve user id".to_string())
+    } else {
+        Ok(uid)
+    }
+}
+
+fn launchctl_bootstrap(plist_path: &PathBuf) -> Result<(), String> {
+    let uid = get_user_uid()?;
+    let service_target = format!("gui/{}", uid);
+
+    // Best-effort bootout to allow updates (ignore failures)
+    let _ = Command::new("launchctl")
+        .arg("bootout")
+        .arg(&service_target)
+        .arg(plist_path)
+        .output();
+
+    let output = Command::new("launchctl")
+        .arg("bootstrap")
+        .arg(&service_target)
+        .arg(plist_path)
+        .output()
+        .map_err(|e| format!("Failed to run launchctl bootstrap: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("launchctl bootstrap failed: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
+fn launchctl_bootout(plist_path: &PathBuf) -> Result<(), String> {
+    let uid = get_user_uid()?;
+    let service_target = format!("gui/{}", uid);
+    let output = Command::new("launchctl")
+        .arg("bootout")
+        .arg(&service_target)
+        .arg(plist_path)
+        .output()
+        .map_err(|e| format!("Failed to run launchctl bootout: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("launchctl bootout failed: {}", stderr.trim()));
+    }
+    Ok(())
 }
 
 fn parse_plist_filename(file_name: &str) -> Option<(String, String)> {
@@ -93,6 +182,7 @@ fn parse_plist_filename(file_name: &str) -> Option<(String, String)> {
 pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
     ensure_config_dir()?;
     let plist_path = get_plist_path(&config.tool, &config.schedule_id)?;
+    let launch_agents_path = get_launch_agents_plist_path(&config.tool, &config.schedule_id)?;
 
     // Get the path to the run script
     let script_name = match config.tool.as_str() {
@@ -258,16 +348,39 @@ pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
     fs::write(&plist_path, plist_bytes)
         .map_err(|e| format!("Failed to write plist file: {}", e))?;
 
-    Ok(format!("Plist created at: {}", plist_path.display()))
+    let launch_agents_dir = get_launch_agents_dir()?;
+    fs::create_dir_all(&launch_agents_dir)
+        .map_err(|e| format!("Failed to create LaunchAgents directory: {}", e))?;
+    fs::copy(&plist_path, &launch_agents_path)
+        .map_err(|e| format!("Failed to copy plist to LaunchAgents: {}", e))?;
+
+    launchctl_bootstrap(&launch_agents_path)?;
+
+    Ok(format!(
+        "Plist created at: {} and loaded via launchctl",
+        plist_path.display()
+    ))
 }
 
 /// Delete the plist for a specific tool
 pub fn delete_plist(tool: &str, schedule_id: &str) -> Result<String, String> {
-    let plist_path = if schedule_id == "legacy" {
-        get_legacy_plist_path(tool)?
+    let (plist_path, launch_agents_path) = if schedule_id == "legacy" {
+        (
+            get_legacy_plist_path(tool)?,
+            get_legacy_launch_agents_plist_path(tool)?,
+        )
     } else {
-        get_plist_path(tool, schedule_id)?
+        (
+            get_plist_path(tool, schedule_id)?,
+            get_launch_agents_plist_path(tool, schedule_id)?,
+        )
     };
+
+    if launch_agents_path.exists() {
+        let _ = launchctl_bootout(&launch_agents_path);
+        fs::remove_file(&launch_agents_path)
+            .map_err(|e| format!("Failed to delete LaunchAgents plist file: {}", e))?;
+    }
 
     if plist_path.exists() {
         fs::remove_file(&plist_path)
