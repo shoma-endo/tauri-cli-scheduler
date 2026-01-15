@@ -297,6 +297,18 @@ export function ScheduleManager({
         return "失敗";
       case "skipped":
         return "スキップ";
+      case "wake-triggered":
+        return "起床成功";
+      case "wake-missed":
+        return "起床失敗（補填）";
+      case "catchup-started":
+        return "補填開始";
+      case "catchup-success":
+        return "補填成功";
+      case "catchup-failure":
+        return "補填失敗";
+      case "catchup-skipped-running":
+        return "補填スキップ（実行中）";
       default:
         return status;
     }

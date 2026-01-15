@@ -34,6 +34,15 @@ pub struct RegisteredSchedule {
     pub start_date: Option<String>,
 }
 
+pub fn default_tool_options(tool: &str) -> Option<String> {
+    match tool {
+        "claude" => Some("--model opus --dangerously-skip-permissions".to_string()),
+        "codex" => Some("--model gpt-5.2-codex --full-auto".to_string()),
+        "gemini" => Some("--yolo".to_string()),
+        _ => None,
+    }
+}
+
 /// Get the config directory for the scheduler
 fn get_config_dir() -> Result<PathBuf, String> {
     dirs::config_dir()
@@ -233,9 +242,21 @@ pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
             }
         }
     }
+
+    // For 'once', add Day and Month to target a specific date
+    if config.schedule_type == "once" {
+        if let Some(date_str) = &config.start_date {
+            if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                cal_interval.insert("Day".to_string(), Value::Integer((date.day() as i64).into()));
+                cal_interval.insert("Month".to_string(), Value::Integer((date.month() as i64).into()));
+            }
+        }
+    }
+
     // For 'interval', we set it to run daily, but filter execution in the script.
     
     plist_dict.insert("StartCalendarInterval".to_string(), Value::Dictionary(cal_interval));
+    plist_dict.insert("WakeToRun".to_string(), Value::Boolean(true));
 
     // ProgramArguments
     let args = vec![
@@ -250,23 +271,28 @@ pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
     match config.tool.as_str() {
         "claude" => {
             env_vars.insert("CLAUDE_COMMAND".to_string(), Value::String(config.command_args.clone()));
-            env_vars.insert(
-                "CLAUDE_OPTIONS".to_string(),
-                Value::String("--model opus --dangerously-skip-permissions".to_string()),
-            );
         }
         "codex" => {
             env_vars.insert("CODEX_COMMAND".to_string(), Value::String(config.command_args.clone()));
-            env_vars.insert(
-                "CODEX_OPTIONS".to_string(),
-                Value::String("--model gpt-5.2-codex --full-auto".to_string()),
-            );
         }
         "gemini" => {
             env_vars.insert("GEMINI_COMMAND".to_string(), Value::String(config.command_args.clone()));
-            env_vars.insert("GEMINI_OPTIONS".to_string(), Value::String("--yolo".to_string()));
         }
         _ => {}
+    }
+    if let Some(options) = default_tool_options(&config.tool) {
+        match config.tool.as_str() {
+            "claude" => {
+                env_vars.insert("CLAUDE_OPTIONS".to_string(), Value::String(options));
+            }
+            "codex" => {
+                env_vars.insert("CODEX_OPTIONS".to_string(), Value::String(options));
+            }
+            "gemini" => {
+                env_vars.insert("GEMINI_OPTIONS".to_string(), Value::String(options));
+            }
+            _ => {}
+        }
     }
 
     env_vars.insert("TARGET_DIRECTORY".to_string(), Value::String(config.target_directory.clone()));
@@ -417,28 +443,6 @@ pub fn get_registered_schedules() -> Result<Vec<RegisteredSchedule>, String> {
     }
 
     Ok(schedules)
-}
-
-/// Check if a tool is scheduled
-pub fn is_tool_scheduled(tool: &str) -> Result<bool, String> {
-    let config_dir = get_config_dir()?;
-    if !config_dir.exists() {
-        return Ok(false);
-    }
-    let entries = fs::read_dir(&config_dir)
-        .map_err(|e| format!("Failed to read config directory: {}", e))?;
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read config entry: {}", e))?;
-        let path = entry.path();
-        if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
-            if let Some((found_tool, _)) = parse_plist_filename(file_name) {
-                if found_tool == tool {
-                    return Ok(true);
-                }
-            }
-        }
-    }
-    Ok(false)
 }
 
 /// Load plist content for a path

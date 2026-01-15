@@ -27,6 +27,7 @@ append_history() {
     echo "Command: $CLAUDE_COMMAND"
     echo "Options: $CLAUDE_OPTIONS"
 } >> "$LOG_FILE"
+append_history "wake-triggered"
 
 # Check interval schedule if configured
 if [ "$SCHEDULE_TYPE" = "interval" ] && [ -n "$SCHEDULE_INTERVAL_DAYS" ] && [ -n "$SCHEDULE_START_DATE" ]; then
@@ -78,6 +79,24 @@ if [ $RESULT -eq 0 ]; then
 else
     echo "=== Claude execution failed with error code $RESULT at $(date) ===" >> "$ERROR_FILE"
     append_history "failure"
+fi
+
+# Auto-delete for 'once' schedule type
+if [ "$SCHEDULE_TYPE" = "once" ]; then
+    echo "=== Auto-deleting one-time schedule ===" >> "$LOG_FILE"
+    CONFIG_DIR="$HOME/.config/tauri-cli-scheduler"
+    PLIST_NAME="com.shoma.tauri-cli-scheduler.${TOOL}.${SCHEDULE_ID}.plist"
+    LAUNCH_AGENTS_PLIST="$HOME/Library/LaunchAgents/$PLIST_NAME"
+    CONFIG_PLIST="$CONFIG_DIR/$PLIST_NAME"
+
+    # Unload from launchd (best effort, ignore errors)
+    launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENTS_PLIST" 2>/dev/null || true
+
+    # Remove plist files
+    rm -f "$LAUNCH_AGENTS_PLIST" 2>/dev/null || true
+    rm -f "$CONFIG_PLIST" 2>/dev/null || true
+
+    echo "=== One-time schedule deleted ===" >> "$LOG_FILE"
 fi
 
 exit $RESULT

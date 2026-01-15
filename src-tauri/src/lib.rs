@@ -1,20 +1,26 @@
-use chrono::{Datelike, Timelike};
+use chrono::{
+    DateTime, Datelike, Local, LocalResult, NaiveDate, NaiveTime, TimeZone, Timelike, Utc,
+};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
-use std::{fs::File, io::BufRead, io::BufReader};
-use std::time::Duration;
-use tauri::{Emitter, State};
-use tokio::time::sleep;
+use std::{
+    fs::{File, OpenOptions},
+    io::{BufRead, BufReader, Write},
+};
+use tauri::{Manager, State};
 
 mod plist_manager;
 use plist_manager::{LaunchdConfig, RegisteredSchedule};
 
+#[derive(Clone)]
 struct ToolState {
     is_running: Arc<Mutex<bool>>,
     cancel_flag: Arc<Mutex<bool>>,
 }
 
+#[derive(Clone)]
 struct AppState {
     claude: ToolState,
     codex: ToolState,
@@ -27,98 +33,6 @@ fn escape_applescript_string(input: &str) -> String {
         .replace('"', r#"\""#)
         .replace('\n', r"\n")
         .replace('\r', r"\r")
-}
-
-fn has_balanced_quotes(input: &str) -> bool {
-    let mut in_single = false;
-    let mut in_double = false;
-    let mut escaped = false;
-
-    for ch in input.chars() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if ch == '\\' {
-            escaped = true;
-            continue;
-        }
-        if ch == '\'' && !in_double {
-            in_single = !in_single;
-            continue;
-        }
-        if ch == '"' && !in_single {
-            in_double = !in_double;
-        }
-    }
-
-    !in_single && !in_double && !escaped
-}
-
-fn contains_flag(input: &str, flag: &str) -> bool {
-    let input_bytes = input.as_bytes();
-    let flag_bytes = flag.as_bytes();
-    let mut index = 0;
-
-    while index < input.len() {
-        let found = match input[index..].find(flag) {
-            Some(pos) => index + pos,
-            None => return false,
-        };
-        let before = if found == 0 {
-            b' '
-        } else {
-            input_bytes[found - 1]
-        };
-        let after_index = found + flag_bytes.len();
-        let after = if after_index >= input_bytes.len() {
-            b' '
-        } else {
-            input_bytes[after_index]
-        };
-        let before_ok = before.is_ascii_whitespace();
-        let after_ok = after.is_ascii_whitespace() || after == b'=';
-        if before_ok && after_ok {
-            return true;
-        }
-        index = found + flag_bytes.len();
-    }
-
-    false
-}
-
-fn validate_launch_options(tool: &str, options: &str) -> Result<(), String> {
-    if options.trim().is_empty() {
-        return Ok(());
-    }
-    if options.contains('\n') || options.contains('\r') {
-        return Err("起動オプションに改行は使用できません".to_string());
-    }
-    if !has_balanced_quotes(options) {
-        return Err("起動オプションの引用符が不正です".to_string());
-    }
-
-    let reserved_flags: &[&str] = match tool {
-        "claude" => &["--model", "--dangerously-skip-permissions"],
-        "codex" => &["--model", "--sandbox", "--ask-for-approval", "--full-auto", "--search"],
-        "gemini" => &[
-            "--model",
-            "--output-format",
-            "--include-directories",
-            "--approval-mode",
-            "--yolo",
-            "--prompt",
-        ],
-        _ => &[],
-    };
-
-    for flag in reserved_flags {
-        if contains_flag(options, flag) {
-            return Err(format!("起動オプションに予約済みフラグが含まれています: {}", flag));
-        }
-    }
-
-    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -154,6 +68,312 @@ struct ScheduleHistoryEntry {
     schedule_id: String,
     tool: String,
     status: String,
+}
+
+fn parse_schedule_time(execution_time: &str) -> Option<NaiveTime> {
+    let parts: Vec<&str> = execution_time.split(':').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let hour: u32 = parts[0].parse().ok()?;
+    let minute: u32 = parts[1].parse().ok()?;
+    NaiveTime::from_hms_opt(hour, minute, 0)
+}
+
+fn local_datetime_from_date_time(date: NaiveDate, time: NaiveTime) -> Option<DateTime<Local>> {
+    let naive = date.and_time(time);
+    match Local.from_local_datetime(&naive) {
+        LocalResult::Single(dt) => Some(dt),
+        LocalResult::Ambiguous(earliest, _) => Some(earliest),
+        LocalResult::None => None,
+    }
+}
+
+fn get_last_scheduled_time(
+    schedule: &RegisteredSchedule,
+    now: DateTime<Local>,
+) -> Option<DateTime<Local>> {
+    let time = parse_schedule_time(&schedule.execution_time)?;
+    let today = now.date_naive();
+
+    match schedule.schedule_type.as_str() {
+        "daily" => {
+            let mut candidate = local_datetime_from_date_time(today, time)?;
+            if candidate > now {
+                let yesterday = today.pred_opt()?;
+                candidate = local_datetime_from_date_time(yesterday, time)?;
+            }
+            Some(candidate)
+        }
+        "weekly" => {
+            let start_date_str = schedule.start_date.as_ref()?;
+            let start_date = NaiveDate::parse_from_str(start_date_str, "%Y-%m-%d").ok()?;
+            let target_weekday = start_date.weekday();
+            let today_weekday = today.weekday();
+            let days_back = (7
+                + today_weekday.num_days_from_monday() as i64
+                - target_weekday.num_days_from_monday() as i64)
+                % 7;
+            let mut date = today - chrono::Duration::days(days_back);
+            let mut candidate = local_datetime_from_date_time(date, time)?;
+            if candidate > now {
+                date = date - chrono::Duration::days(7);
+                candidate = local_datetime_from_date_time(date, time)?;
+            }
+            Some(candidate)
+        }
+        "interval" => {
+            let start_date_str = schedule.start_date.as_ref()?;
+            let interval = schedule.interval_value? as i64;
+            let start_date = NaiveDate::parse_from_str(start_date_str, "%Y-%m-%d").ok()?;
+            if today < start_date {
+                return None;
+            }
+            let days_since = (today - start_date).num_days();
+            let mut last_offset = days_since - (days_since % interval);
+            let mut last_date = start_date + chrono::Duration::days(last_offset);
+            let mut candidate = local_datetime_from_date_time(last_date, time)?;
+            if candidate > now {
+                if last_offset < interval {
+                    return None;
+                }
+                last_offset -= interval;
+                last_date = start_date + chrono::Duration::days(last_offset);
+                candidate = local_datetime_from_date_time(last_date, time)?;
+            }
+            Some(candidate)
+        }
+        _ => None,
+    }
+}
+
+fn load_last_history_map() -> Result<HashMap<String, DateTime<Utc>>, String> {
+    let config_dir = dirs::config_dir()
+        .ok_or("Could not determine config directory".to_string())?
+        .join("tauri-cli-scheduler");
+    let history_path = config_dir.join("schedule-history.jsonl");
+
+    if !history_path.exists() {
+        return Ok(HashMap::new());
+    }
+
+    let file =
+        File::open(&history_path).map_err(|e| format!("Failed to read history file: {}", e))?;
+    let reader = BufReader::new(file);
+
+    let mut latest_map: HashMap<String, DateTime<Utc>> = HashMap::new();
+    for line in reader.lines() {
+        let line = match line {
+            Ok(val) => val,
+            Err(_) => continue,
+        };
+        let entry: ScheduleHistoryEntry = match serde_json::from_str(&line) {
+            Ok(val) => val,
+            Err(_) => continue,
+        };
+        let timestamp = match DateTime::parse_from_rfc3339(&entry.timestamp) {
+            Ok(val) => val.with_timezone(&Utc),
+            Err(_) => continue,
+        };
+        let update = match latest_map.get(&entry.schedule_id) {
+            Some(existing) => timestamp > *existing,
+            None => true,
+        };
+        if update {
+            latest_map.insert(entry.schedule_id.clone(), timestamp);
+        }
+    }
+
+    Ok(latest_map)
+}
+
+fn append_schedule_history(schedule_id: &str, tool: &str, status: &str) -> Result<(), String> {
+    let config_dir = plist_manager::ensure_config_dir()?;
+    let history_path = config_dir.join("schedule-history.jsonl");
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&history_path)
+        .map_err(|e| format!("Failed to open history file: {}", e))?;
+
+    let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let entry = serde_json::json!({
+        "timestamp": timestamp,
+        "schedule_id": schedule_id,
+        "tool": tool,
+        "status": status,
+    });
+
+    writeln!(file, "{}", entry.to_string())
+        .map_err(|e| format!("Failed to write history file: {}", e))?;
+    Ok(())
+}
+
+fn build_catchup_applescript(
+    tool: &str,
+    target_directory: &str,
+    options: &str,
+    command: &str,
+) -> Result<String, String> {
+    let escaped_target_directory = escape_applescript_string(target_directory);
+    let escaped_options = escape_applescript_string(options);
+    let escaped_command = escape_applescript_string(command);
+
+    let script = match tool {
+        "claude" => format!(
+            r#"
+property targetDirectory : "{}"
+property toolOptions : "{}"
+property toolCommand : "{}"
+
+tell application "iTerm"
+    activate
+    create window with default profile
+
+    tell current session of current window
+        write text "cd " & quoted form of targetDirectory
+        write text "claude " & toolOptions & " " & quoted form of toolCommand
+    end tell
+end tell
+            "#,
+            escaped_target_directory, escaped_options, escaped_command
+        ),
+        "codex" => format!(
+            r#"
+property targetDirectory : "{}"
+property toolOptions : "{}"
+property toolCommand : "{}"
+
+tell application "iTerm"
+    activate
+    create window with default profile
+
+    tell current session of current window
+        write text "cd " & quoted form of targetDirectory
+        write text "codex " & toolOptions & " " & quoted form of toolCommand
+    end tell
+end tell
+            "#,
+            escaped_target_directory, escaped_options, escaped_command
+        ),
+        "gemini" => format!(
+            r#"
+property targetDirectory : "{}"
+property toolOptions : "{}"
+property toolCommand : "{}"
+
+tell application "iTerm"
+    activate
+    create window with default profile
+
+    tell current session of current window
+        write text "cd " & quoted form of targetDirectory
+        write text "gemini " & toolOptions & " --prompt " & quoted form of toolCommand
+    end tell
+end tell
+            "#,
+            escaped_target_directory, escaped_options, escaped_command
+        ),
+        _ => return Err("無効なツール指定です".to_string()),
+    };
+
+    Ok(script)
+}
+
+async fn execute_schedule_catchup(
+    schedule: &RegisteredSchedule,
+    state: &AppState,
+) -> Result<(), String> {
+    let tool_state = match schedule.tool.as_str() {
+        "claude" => &state.claude,
+        "codex" => &state.codex,
+        "gemini" => &state.gemini,
+        _ => return Err("無効なツール指定です".to_string()),
+    };
+
+    {
+        let mut is_running = tool_state.is_running.lock().unwrap();
+        if *is_running {
+            append_schedule_history(&schedule.schedule_id, &schedule.tool, "catchup-skipped-running")?;
+            return Ok(());
+        }
+        *is_running = true;
+
+        let mut cancel_flag = tool_state.cancel_flag.lock().unwrap();
+        *cancel_flag = false;
+    }
+
+    if !std::path::Path::new(&schedule.target_directory).exists() {
+        let mut is_running = tool_state.is_running.lock().unwrap();
+        *is_running = false;
+        append_schedule_history(&schedule.schedule_id, &schedule.tool, "catchup-failure")?;
+        return Err(format!(
+            "ディレクトリが存在しません: {}",
+            schedule.target_directory
+        ));
+    }
+
+    let options = plist_manager::default_tool_options(&schedule.tool).unwrap_or_default();
+    let applescript = build_catchup_applescript(
+        &schedule.tool,
+        &schedule.target_directory,
+        &options,
+        &schedule.command_args,
+    )?;
+
+    append_schedule_history(&schedule.schedule_id, &schedule.tool, "catchup-started")?;
+    let output = Command::new("osascript").arg("-e").arg(&applescript).output();
+
+    let mut is_running = tool_state.is_running.lock().unwrap();
+    *is_running = false;
+
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                append_schedule_history(&schedule.schedule_id, &schedule.tool, "catchup-success")?;
+                Ok(())
+            } else {
+                append_schedule_history(&schedule.schedule_id, &schedule.tool, "catchup-failure")?;
+                Err(format!(
+                    "AppleScriptエラー: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ))
+            }
+        }
+        Err(e) => {
+            append_schedule_history(&schedule.schedule_id, &schedule.tool, "catchup-failure")?;
+            Err(format!("実行エラー: {}", e))
+        }
+    }
+}
+
+async fn run_missed_schedules(state: AppState) -> Result<(), String> {
+    let now = Local::now();
+    let schedules = plist_manager::get_registered_schedules()?;
+    if schedules.is_empty() {
+        return Ok(());
+    }
+
+    let last_history_map = load_last_history_map()?;
+
+    for schedule in schedules {
+        let last_scheduled_time = match get_last_scheduled_time(&schedule, now) {
+            Some(val) => val,
+            None => continue,
+        };
+        let last_scheduled_utc = last_scheduled_time.with_timezone(&Utc);
+        let last_run = last_history_map.get(&schedule.schedule_id);
+        let missed = match last_run {
+            Some(val) => *val < last_scheduled_utc,
+            None => true,
+        };
+        if missed {
+            let _ = append_schedule_history(&schedule.schedule_id, &schedule.tool, "wake-missed");
+            let _ = execute_schedule_catchup(&schedule, &state).await;
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -204,1644 +424,234 @@ async fn check_iterm_status() -> Result<ITermStatus, String> {
 async fn execute_claude_command(
     execution_time: String, // HH:MM format
     target_directory: String,
-    claude_model: String,
-    claude_skip_permissions: bool,
-    claude_launch_options: String,
+    _claude_model: String,
+    _claude_skip_permissions: bool,
+    _claude_launch_options: String,
     claude_command: String,
-    auto_retry_on_rate_limit: bool,
-    use_new_window: bool,
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
+    _auto_retry_on_rate_limit: bool, // Not used in launchd mode
+    _use_new_window: bool, // Always true for launchd mode
+    _state: State<'_, AppState>,
+    _app: tauri::AppHandle,
 ) -> Result<ExecutionResult, String> {
-    let is_running_clone = state.claude.is_running.clone();
-    let cancel_flag_clone = state.claude.cancel_flag.clone();
-
-    {
-        let mut is_running = is_running_clone.lock().unwrap();
-        if *is_running {
-            return Err("Claude Codeは既に実行中です".to_string());
-        }
-        *is_running = true;
-
-        let mut cancel_flag = cancel_flag_clone.lock().unwrap();
-        *cancel_flag = false;
-    }
-
-    // Check if target directory exists (only for new window mode)
-    if use_new_window && !std::path::Path::new(&target_directory).exists() {
-        let mut is_running = is_running_clone.lock().unwrap();
-        *is_running = false;
+    // Check if target directory exists
+    if !std::path::Path::new(&target_directory).exists() {
         return Err(format!("ディレクトリが存在しません: {}", target_directory));
-    }
-
-    if use_new_window {
-        if let Err(err) = validate_launch_options("claude", &claude_launch_options) {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err(err);
-        }
     }
 
     // Parse execution time
     let parts: Vec<&str> = execution_time.split(':').collect();
     if parts.len() != 2 {
-        let mut is_running = is_running_clone.lock().unwrap();
-        *is_running = false;
         return Err("時刻の形式が正しくありません".to_string());
     }
 
-    let hour: u32 = match parts[0].parse() {
-        Ok(h) => h,
-        Err(_) => {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err("時間の解析エラー".to_string());
-        }
-    };
+    let hour: u32 = parts[0].parse().map_err(|_| "時間の解析エラー".to_string())?;
+    let minute: u32 = parts[1].parse().map_err(|_| "分の解析エラー".to_string())?;
 
-    let minute: u32 = match parts[1].parse() {
-        Ok(m) => m,
-        Err(_) => {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err("分の解析エラー".to_string());
-        }
-    };
-
-    // Calculate wait time
+    // Calculate target date (today or tomorrow if time has passed)
     let now = chrono::Local::now();
-    let mut target = match chrono::Local::now()
+    let mut target = now
         .with_hour(hour)
         .and_then(|t| t.with_minute(minute))
         .and_then(|t| t.with_second(0))
-    {
-        Some(t) => t,
-        None => {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err("時刻の設定エラー".to_string());
-        }
-    };
+        .ok_or("時刻の設定エラー".to_string())?;
 
-    // If target time is in the past, move to tomorrow
     if target <= now {
         target = target + chrono::Duration::days(1);
     }
 
-    let wait_duration = target.signed_duration_since(now);
-    let wait_millis = wait_duration.num_milliseconds() as u64;
+    let target_date = target.format("%Y-%m-%d").to_string();
 
-    // Wait until target time with cancellation check
-    let check_interval = Duration::from_secs(1);
-    let mut elapsed = Duration::from_millis(0);
-    let total_wait = Duration::from_millis(wait_millis);
+    // Generate schedule ID
+    let schedule_id = format!(
+        "{}{:03}",
+        now.format("%Y%m%d%H%M%S"),
+        now.timestamp_subsec_millis()
+    );
 
-    while elapsed < total_wait {
-        // Check cancel flag
-        {
-            let cancel = cancel_flag_clone.lock().unwrap();
-            if *cancel {
-                let mut is_running = is_running_clone.lock().unwrap();
-                *is_running = false;
-                return Err("実行がキャンセルされました".to_string());
-            }
-        }
+    // Build command with options (options are set via plist_manager::default_tool_options)
+    // Additional options from UI are not used in launchd mode for simplicity
 
-        sleep(check_interval).await;
-        elapsed += check_interval;
-    }
-
-    // Send event to frontend that execution is starting
-    app.emit("execution-started", "").ok();
-
-    let mut options = Vec::new();
-    if !claude_model.is_empty() {
-        options.push(format!("--model {}", claude_model));
-    }
-    if claude_skip_permissions {
-        options.push("--dangerously-skip-permissions".to_string());
-    }
-    if !claude_launch_options.trim().is_empty() {
-        options.push(claude_launch_options.trim().to_string());
-    }
-    let claude_options = options.join(" ");
-
-    // Execute AppleScript
-    let result = execute_applescript(
-        &target_directory,
-        &claude_options,
-        &claude_command,
-        auto_retry_on_rate_limit,
-        use_new_window,
-        &app,
-        cancel_flag_clone.clone(),
-    )
-    .await;
-
-    let mut is_running = is_running_clone.lock().unwrap();
-    *is_running = false;
-
-    result
-}
-
-async fn execute_applescript(
-    target_directory: &str,
-    claude_options: &str,
-    claude_command: &str,
-    auto_retry_on_rate_limit: bool,
-    use_new_window: bool,
-    app: &tauri::AppHandle,
-    cancel_flag: Arc<Mutex<bool>>,
-) -> Result<ExecutionResult, String> {
-    execute_applescript_internal(
-        target_directory,
-        claude_options,
-        claude_command,
-        use_new_window,
-    )
-    .await?;
-
-    if auto_retry_on_rate_limit {
-        let start_time = std::time::Instant::now();
-        let mut had_esc_to_interrupt = false;
-        let mut esc_absent_count = 0;
-        let mut first_esc_absent_time: Option<std::time::Instant> = None;
-        let mut reset_at_count = 0;
-
-        // Check every minute for rate limit messages and completion
-        loop {
-            // Check if cancelled
-            {
-                let cancel = cancel_flag.lock().unwrap();
-                if *cancel {
-                    return Ok(ExecutionResult {
-                        status: "cancelled".to_string(),
-                        terminal_output: None,
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            }
-
-            sleep(Duration::from_secs(60)).await;
-
-            let output = get_terminal_output("iTerm").await?;
-            app.emit("terminal-output", &output).ok();
-
-            // Check if "esc to interrupt" exists
-            let has_esc_to_interrupt = output.contains("esc to interrupt");
-            let has_reset_at = output.contains("reset at");
-
-            // If "esc to interrupt" was present before but is now gone, increment absent count
-            if had_esc_to_interrupt && !has_esc_to_interrupt {
-                esc_absent_count += 1;
-                println!("'esc to interrupt' not found (count: {})", esc_absent_count);
-
-                // Record the first time we detected absence (subtract 60 seconds since we check every minute)
-                if esc_absent_count == 1 {
-                    first_esc_absent_time =
-                        Some(std::time::Instant::now() - Duration::from_secs(60));
-                }
-
-                // If absent 3 times consecutively AND no "reset at" detected, processing is complete
-                if esc_absent_count >= 3 && !has_reset_at {
-                    // Calculate elapsed time from start to first absence detection
-                    let completion_time =
-                        first_esc_absent_time.unwrap_or(std::time::Instant::now());
-                    let elapsed = completion_time.duration_since(start_time);
-                    let minutes = elapsed.as_secs() / 60;
-                    let seconds = elapsed.as_secs() % 60;
-
-                    println!("Processing completed after {}m{}s", minutes, seconds);
-
-                    return Ok(ExecutionResult {
-                        status: format!("completed_in_{}m{}s", minutes, seconds),
-                        terminal_output: Some(output),
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            } else if has_esc_to_interrupt {
-                // Reset counter and clear first absence time if "esc to interrupt" is found again
-                esc_absent_count = 0;
-                first_esc_absent_time = None;
-                had_esc_to_interrupt = true;
-            }
-
-            // Check for "reset at" and count consecutive occurrences
-            if output.contains("reset at") {
-                reset_at_count += 1;
-                println!("'reset at' detected (count: {})", reset_at_count);
-
-                // Check if we've detected 3 consecutive "reset at" messages
-                if reset_at_count >= 3 {
-                    // Rate limit detected - schedule re-execution at next hour:01
-                    let now = chrono::Local::now();
-                    let current_hour = now.hour();
-                    let current_minute = now.minute();
-
-                    // Calculate next x:01 time
-                    let next_hour = if current_minute == 0 {
-                        // If it's exactly X:00, schedule for X:01
-                        current_hour
-                    } else {
-                        // Otherwise schedule for next hour's :01
-                        (current_hour + 1) % 24
-                    };
-
-                    let mut next_execution = now
-                        .with_hour(next_hour)
-                        .ok_or("時間の設定エラー")?
-                        .with_minute(1)
-                        .ok_or("分の設定エラー")?
-                        .with_second(0)
-                        .ok_or("秒の設定エラー")?;
-
-                    // If next_execution is in the past (shouldn't happen unless it's exactly X:01), add a day
-                    if next_execution <= now {
-                        next_execution = next_execution + chrono::Duration::days(1);
-                    }
-
-                    let wait_duration = next_execution.signed_duration_since(now);
-                    let wait_seconds = wait_duration.num_seconds();
-                    let wait_minutes = wait_seconds / 60;
-
-                    println!(
-                        "Rate limit detected (3 consecutive), scheduling re-execution at {:02}:01",
-                        if next_execution.day() != now.day() {
-                            (next_hour + 24) % 24
-                        } else {
-                            next_hour
-                        }
-                    );
-
-                    // Notify frontend about the scheduled re-execution
-                    app.emit(
-                        "terminal-output",
-                        &format!(
-                            "Rate limit detected (3回連続). 次の実行時刻: {:02}:01 (残り約{}分)",
-                            if next_execution.day() != now.day() {
-                                (next_hour + 24) % 24
-                            } else {
-                                next_hour
-                            },
-                            wait_minutes
-                        ),
-                    )
-                    .ok();
-                    app.emit(
-                        "rate-limit-retry-scheduled",
-                        format!(
-                            "{:02}:01",
-                            if next_execution.day() != now.day() {
-                                (next_hour + 24) % 24
-                            } else {
-                                next_hour
-                            }
-                        ),
-                    )
-                    .ok();
-
-                    // Wait until the scheduled time
-                    let mut waited = Duration::from_secs(0);
-                    let total_wait = Duration::from_secs(wait_seconds as u64);
-
-                    while waited < total_wait {
-                        {
-                            let cancel = cancel_flag.lock().unwrap();
-                            if *cancel {
-                                return Ok(ExecutionResult {
-                                    status: "cancelled".to_string(),
-                                    terminal_output: None,
-                                    needs_retry: Some(false),
-                                    retry_time: None,
-                                });
-                            }
-                        }
-
-                        // 60秒ごとに状態更新
-                        sleep(Duration::from_secs(60)).await;
-                        waited += Duration::from_secs(60);
-
-                        // 現在の状態を通知
-                        let remaining_seconds = total_wait.as_secs() - waited.as_secs();
-                        let remaining_minutes = remaining_seconds / 60;
-                        let status_update = format!(
-                            "Rate limit detected. 次の実行を待機中 (残り約{}分)",
-                            remaining_minutes
-                        );
-                        app.emit("terminal-output", &status_update).ok();
-                    }
-
-                    // Send "continue" to terminal
-                    send_continue_to_terminal("iTerm").await?;
-
-                    // Reset the counter after sending continue
-                    reset_at_count = 0;
-                }
-            } else {
-                // Reset counter if "reset at" is not found
-                if reset_at_count > 0 {
-                    println!(
-                        "'reset at' not found, resetting counter from {}",
-                        reset_at_count
-                    );
-                }
-                reset_at_count = 0;
-            }
-        }
-    } else {
-        // When auto-retry is disabled, just monitor for rate limit and terminate
-        let start_time = std::time::Instant::now();
-        let mut had_esc_to_interrupt = false;
-        let mut esc_absent_count = 0;
-        let mut first_esc_absent_time: Option<std::time::Instant> = None;
-        let mut reset_at_count = 0;
-
-        loop {
-            // Check if cancelled
-            {
-                let cancel = cancel_flag.lock().unwrap();
-                if *cancel {
-                    return Ok(ExecutionResult {
-                        status: "cancelled".to_string(),
-                        terminal_output: None,
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            }
-
-            sleep(Duration::from_secs(60)).await;
-
-            let output = get_terminal_output("iTerm").await?;
-            app.emit("terminal-output", &output).ok();
-
-            // Check if "esc to interrupt" exists
-            let has_esc_to_interrupt = output.contains("esc to interrupt");
-            let has_reset_at = output.contains("reset at");
-
-            // If "esc to interrupt" was present before but is now gone, increment absent count
-            if had_esc_to_interrupt && !has_esc_to_interrupt {
-                esc_absent_count += 1;
-                println!("'esc to interrupt' not found (count: {})", esc_absent_count);
-
-                // Record the first time we detected absence (subtract 60 seconds since we check every minute)
-                if esc_absent_count == 1 {
-                    first_esc_absent_time =
-                        Some(std::time::Instant::now() - Duration::from_secs(60));
-                }
-
-                // If absent 3 times consecutively AND no "reset at" detected, processing is complete
-                if esc_absent_count >= 3 && !has_reset_at {
-                    // Calculate elapsed time from start to first absence detection
-                    let completion_time =
-                        first_esc_absent_time.unwrap_or(std::time::Instant::now());
-                    let elapsed = completion_time.duration_since(start_time);
-                    let minutes = elapsed.as_secs() / 60;
-                    let seconds = elapsed.as_secs() % 60;
-
-                    println!("Processing completed after {}m{}s", minutes, seconds);
-
-                    return Ok(ExecutionResult {
-                        status: format!("completed_in_{}m{}s", minutes, seconds),
-                        terminal_output: Some(output),
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            } else if has_esc_to_interrupt {
-                // Reset counter and clear first absence time if "esc to interrupt" is found again
-                esc_absent_count = 0;
-                first_esc_absent_time = None;
-                had_esc_to_interrupt = true;
-            }
-
-            // Check for "reset at" and count consecutive occurrences
-            if output.contains("reset at") {
-                reset_at_count += 1;
-                println!("'reset at' detected (count: {})", reset_at_count);
-
-                // Check if we've detected 3 consecutive "reset at" messages
-                if reset_at_count >= 3 {
-                    println!("Rate limit detected (3 consecutive), terminating as auto-retry is disabled");
-                    app.emit(
-                        "terminal-output",
-                        "Rate limit detected (3回連続). 自動再実行は無効のため終了します。",
-                    )
-                    .ok();
-
-                    return Ok(ExecutionResult {
-                        status: "rate_limit_detected".to_string(),
-                        terminal_output: Some(output),
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            } else {
-                // Reset counter if "reset at" is not found
-                if reset_at_count > 0 {
-                    println!(
-                        "'reset at' not found, resetting counter from {}",
-                        reset_at_count
-                    );
-                }
-                reset_at_count = 0;
-            }
-        }
-    }
-}
-
-async fn execute_applescript_internal(
-    target_directory: &str,
-    claude_options: &str,
-    claude_command: &str,
-    use_new_window: bool,
-) -> Result<String, String> {
-    let escaped_target_directory = escape_applescript_string(target_directory);
-    let escaped_claude_options = escape_applescript_string(claude_options);
-    let escaped_claude_command = escape_applescript_string(claude_command);
-
-    let applescript = if use_new_window {
-        // Create new window
-        format!(
-            r#"
-property targetDirectory : "{}"
-property claudeOptions : "{}"
-property claudeCommand : "{}"
-
-tell application "iTerm"
-    activate
-
-    -- 新規ウィンドウを作成
-    create window with default profile
-
-    tell current session of current window
-        -- ディレクトリに移動
-        write text "cd " & quoted form of targetDirectory
-
-        -- Claude Code を実行
-        write text "claude " & claudeOptions & " " & quoted form of claudeCommand
-    end tell
-end tell
-            "#,
-            escaped_target_directory, escaped_claude_options, escaped_claude_command
-        )
-    } else {
-        // Use existing window - send command only
-        format!(
-            r#"
-property claudeCommand : "{}"
-
-tell application "iTerm"
-    activate
-
-    -- 現在のウィンドウの現在のセッションに命令を送信
-    if (count of windows) > 0 then
-        tell current window
-            tell current session
-                -- 命令のみを送信（Claude Codeが既に実行されていることを前提）
-                write text claudeCommand
-                -- Enterキーを送信
-                write text ""
-            end tell
-        end tell
-    else
-        error "iTermウィンドウが開いていません"
-    end if
-end tell
-            "#,
-            escaped_claude_command
-        )
+    // Create launchd config for one-time execution
+    let config = plist_manager::LaunchdConfig {
+        tool: "claude".to_string(),
+        schedule_id: schedule_id.clone(),
+        title: "1回のみの予約実行".to_string(),
+        hour,
+        minute,
+        target_directory: target_directory.clone(),
+        command_args: claude_command.clone(),
+        schedule_type: "once".to_string(),
+        interval_value: None,
+        start_date: Some(target_date.clone()),
     };
 
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(&applescript)
-        .output();
+    // Create plist and register with launchd
+    plist_manager::create_plist(&config)?;
 
-    match output {
-        Ok(output) => {
-            if output.status.success() {
-                Ok("AppleScript実行完了".to_string())
-            } else {
-                Err(format!(
-                    "AppleScriptエラー: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ))
-            }
-        }
-        Err(e) => Err(format!("実行エラー: {}", e)),
-    }
-}
-
-async fn get_terminal_output(_terminal_app: &str) -> Result<String, String> {
-    // Get the last 20 lines of terminal output from iTerm
-    let applescript = r#"
-tell application "iTerm"
-    tell current window
-        tell current session
-            set outputText to contents
-            set outputLines to paragraphs of outputText
-
-            -- Get last 20 lines
-            set lineCount to count of outputLines
-            if lineCount > 20 then
-                set startIndex to lineCount - 19
-            else
-                set startIndex to 1
-            end if
-
-            set lastLines to ""
-            repeat with i from startIndex to lineCount
-                if i > startIndex then
-                    set lastLines to lastLines & "\n"
-                end if
-                set lastLines to lastLines & item i of outputLines
-            end repeat
-
-            return lastLines
-        end tell
-    end tell
-end tell
-"#;
-
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(applescript)
-        .output()
-        .map_err(|e| format!("ターミナル出力の取得エラー: {}", e))?;
-
-    String::from_utf8(output.stdout).map_err(|e| format!("出力のエンコードエラー: {}", e))
-}
-
-async fn send_continue_to_terminal(_terminal_app: &str) -> Result<(), String> {
-    // Send "continue" text to iTerm
-    let applescript = r#"
-tell application "iTerm"
-    tell current window
-        tell current session
-            write text "continue"
-            -- Enterキーを送信
-            write text ""
-        end tell
-    end tell
-end tell
-"#;
-
-    Command::new("osascript")
-        .arg("-e")
-        .arg(applescript)
-        .output()
-        .map_err(|e| format!("continueコマンドの送信エラー: {}", e))?;
-
-    Ok(())
+    Ok(ExecutionResult {
+        status: "scheduled".to_string(),
+        terminal_output: Some(format!(
+            "スケジュール登録完了: {} {}:{:02} に実行予定",
+            target_date, hour, minute
+        )),
+        needs_retry: Some(false),
+        retry_time: None,
+    })
 }
 
 #[tauri::command]
 async fn execute_codex_command(
     execution_time: String, // HH:MM format
     target_directory: String,
-    codex_model: String,
-    codex_approval_mode: String,
-    codex_enable_search: bool,
-    codex_launch_options: String,
+    _codex_model: String,
+    _codex_approval_mode: String,
+    _codex_enable_search: bool,
+    _codex_launch_options: String,
     codex_command: String,
-    auto_retry_on_rate_limit: bool,
-    use_new_window: bool,
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
+    _auto_retry_on_rate_limit: bool, // Not used in launchd mode
+    _use_new_window: bool, // Always true for launchd mode
+    _state: State<'_, AppState>,
+    _app: tauri::AppHandle,
 ) -> Result<ExecutionResult, String> {
-    let is_running_clone = state.codex.is_running.clone();
-    let cancel_flag_clone = state.codex.cancel_flag.clone();
-
-    {
-        let mut is_running = is_running_clone.lock().unwrap();
-        if *is_running {
-            return Err("Codexは既に実行中です".to_string());
-        }
-        *is_running = true;
-
-        let mut cancel_flag = cancel_flag_clone.lock().unwrap();
-        *cancel_flag = false;
-    }
-
-    // Check if target directory exists (only for new window mode)
-    if use_new_window && !std::path::Path::new(&target_directory).exists() {
-        let mut is_running = is_running_clone.lock().unwrap();
-        *is_running = false;
+    // Check if target directory exists
+    if !std::path::Path::new(&target_directory).exists() {
         return Err(format!("ディレクトリが存在しません: {}", target_directory));
-    }
-
-    if use_new_window {
-        if let Err(err) = validate_launch_options("codex", &codex_launch_options) {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err(err);
-        }
     }
 
     // Parse execution time
     let parts: Vec<&str> = execution_time.split(':').collect();
     if parts.len() != 2 {
-        let mut is_running = is_running_clone.lock().unwrap();
-        *is_running = false;
         return Err("時刻の形式が正しくありません".to_string());
     }
 
-    let hour: u32 = match parts[0].parse() {
-        Ok(h) => h,
-        Err(_) => {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err("時間の解析エラー".to_string());
-        }
-    };
+    let hour: u32 = parts[0].parse().map_err(|_| "時間の解析エラー".to_string())?;
+    let minute: u32 = parts[1].parse().map_err(|_| "分の解析エラー".to_string())?;
 
-    let minute: u32 = match parts[1].parse() {
-        Ok(m) => m,
-        Err(_) => {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err("分の解析エラー".to_string());
-        }
-    };
-
-    // Calculate wait time
+    // Calculate target date (today or tomorrow if time has passed)
     let now = chrono::Local::now();
-    let mut target = match chrono::Local::now()
+    let mut target = now
         .with_hour(hour)
         .and_then(|t| t.with_minute(minute))
         .and_then(|t| t.with_second(0))
-    {
-        Some(t) => t,
-        None => {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err("時刻の設定エラー".to_string());
-        }
-    };
+        .ok_or("時刻の設定エラー".to_string())?;
 
-    // If target time is in the past, move to tomorrow
     if target <= now {
         target = target + chrono::Duration::days(1);
     }
 
-    let wait_duration = target.signed_duration_since(now);
-    let wait_millis = wait_duration.num_milliseconds() as u64;
+    let target_date = target.format("%Y-%m-%d").to_string();
 
-    // Wait until target time with cancellation check
-    let check_interval = Duration::from_secs(1);
-    let mut elapsed = Duration::from_millis(0);
-    let total_wait = Duration::from_millis(wait_millis);
+    // Generate schedule ID
+    let schedule_id = format!(
+        "{}{:03}",
+        now.format("%Y%m%d%H%M%S"),
+        now.timestamp_subsec_millis()
+    );
 
-    while elapsed < total_wait {
-        // Check cancel flag
-        {
-            let cancel = cancel_flag_clone.lock().unwrap();
-            if *cancel {
-                let mut is_running = is_running_clone.lock().unwrap();
-                *is_running = false;
-                return Err("実行がキャンセルされました".to_string());
-            }
-        }
-
-        sleep(check_interval).await;
-        elapsed += check_interval;
-    }
-
-    // Send event to frontend that execution is starting
-    app.emit("execution-started", "").ok();
-
-    // Execute AppleScript for Codex
-    let result = execute_codex_applescript(
-        &target_directory,
-        &codex_model,
-        &codex_approval_mode,
-        codex_enable_search,
-        &codex_launch_options,
-        &codex_command,
-        auto_retry_on_rate_limit,
-        use_new_window,
-        &app,
-        cancel_flag_clone.clone(),
-    )
-    .await;
-
-    let mut is_running = is_running_clone.lock().unwrap();
-    *is_running = false;
-
-    result
-}
-
-async fn execute_codex_applescript(
-    target_directory: &str,
-    codex_model: &str,
-    codex_approval_mode: &str,
-    codex_enable_search: bool,
-    codex_launch_options: &str,
-    codex_command: &str,
-    auto_retry_on_rate_limit: bool,
-    use_new_window: bool,
-    app: &tauri::AppHandle,
-    cancel_flag: Arc<Mutex<bool>>,
-) -> Result<ExecutionResult, String> {
-    execute_codex_applescript_internal(
-        target_directory,
-        codex_model,
-        codex_approval_mode,
-        codex_enable_search,
-        codex_launch_options,
-        codex_command,
-        use_new_window,
-    )
-    .await?;
-
-    // Monitor for completion (similar to Claude but with Codex-specific patterns)
-    if auto_retry_on_rate_limit {
-        let start_time = std::time::Instant::now();
-        let mut had_active_session = false;
-        let mut inactive_count = 0;
-        let mut first_inactive_time: Option<std::time::Instant> = None;
-        let mut rate_limit_count = 0;
-
-        loop {
-            // Check if cancelled
-            {
-                let cancel = cancel_flag.lock().unwrap();
-                if *cancel {
-                    return Ok(ExecutionResult {
-                        status: "cancelled".to_string(),
-                        terminal_output: None,
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            }
-
-            sleep(Duration::from_secs(60)).await;
-
-            let output = get_terminal_output("iTerm").await?;
-            app.emit("terminal-output", &output).ok();
-
-            // Check for active Codex session indicators
-            let has_active_session = output.contains("codex") || output.contains("Codex");
-            let has_rate_limit = output.contains("rate limit") || output.contains("Rate limit");
-
-            if had_active_session && !has_active_session {
-                inactive_count += 1;
-                println!("Codex session inactive (count: {})", inactive_count);
-
-                if inactive_count == 1 {
-                    first_inactive_time = Some(std::time::Instant::now() - Duration::from_secs(60));
-                }
-
-                if inactive_count >= 3 && !has_rate_limit {
-                    let completion_time = first_inactive_time.unwrap_or(std::time::Instant::now());
-                    let elapsed = completion_time.duration_since(start_time);
-                    let minutes = elapsed.as_secs() / 60;
-                    let seconds = elapsed.as_secs() % 60;
-
-                    println!("Codex processing completed after {}m{}s", minutes, seconds);
-
-                    return Ok(ExecutionResult {
-                        status: format!("completed_in_{}m{}s", minutes, seconds),
-                        terminal_output: Some(output),
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            } else if has_active_session {
-                inactive_count = 0;
-                first_inactive_time = None;
-                had_active_session = true;
-            }
-
-            // Check for rate limit
-            if has_rate_limit {
-                rate_limit_count += 1;
-                println!("Rate limit detected (count: {})", rate_limit_count);
-
-                if rate_limit_count >= 3 {
-                    let now = chrono::Local::now();
-                    let current_hour = now.hour();
-                    let current_minute = now.minute();
-
-                    let next_hour = if current_minute == 0 {
-                        current_hour
-                    } else {
-                        (current_hour + 1) % 24
-                    };
-
-                    let mut next_execution = now
-                        .with_hour(next_hour)
-                        .ok_or("時間の設定エラー")?
-                        .with_minute(1)
-                        .ok_or("分の設定エラー")?
-                        .with_second(0)
-                        .ok_or("秒の設定エラー")?;
-
-                    if next_execution <= now {
-                        next_execution = next_execution + chrono::Duration::days(1);
-                    }
-
-                    let wait_duration = next_execution.signed_duration_since(now);
-                    let wait_seconds = wait_duration.num_seconds();
-                    let wait_minutes = wait_seconds / 60;
-
-                    println!(
-                        "Rate limit detected (3 consecutive), scheduling re-execution at {:02}:01",
-                        if next_execution.day() != now.day() {
-                            (next_hour + 24) % 24
-                        } else {
-                            next_hour
-                        }
-                    );
-
-                    app.emit(
-                        "terminal-output",
-                        &format!(
-                            "Rate limit detected (3回連続). 次の実行時刻: {:02}:01 (残り約{}分)",
-                            if next_execution.day() != now.day() {
-                                (next_hour + 24) % 24
-                            } else {
-                                next_hour
-                            },
-                            wait_minutes
-                        ),
-                    )
-                    .ok();
-                    app.emit(
-                        "rate-limit-retry-scheduled",
-                        format!(
-                            "{:02}:01",
-                            if next_execution.day() != now.day() {
-                                (next_hour + 24) % 24
-                            } else {
-                                next_hour
-                            }
-                        ),
-                    )
-                    .ok();
-
-                    let mut waited = Duration::from_secs(0);
-                    let total_wait = Duration::from_secs(wait_seconds as u64);
-
-                    while waited < total_wait {
-                        {
-                            let cancel = cancel_flag.lock().unwrap();
-                            if *cancel {
-                                return Ok(ExecutionResult {
-                                    status: "cancelled".to_string(),
-                                    terminal_output: None,
-                                    needs_retry: Some(false),
-                                    retry_time: None,
-                                });
-                            }
-                        }
-
-                        sleep(Duration::from_secs(60)).await;
-                        waited += Duration::from_secs(60);
-
-                        let remaining_seconds = total_wait.as_secs() - waited.as_secs();
-                        let remaining_minutes = remaining_seconds / 60;
-                        let status_update = format!(
-                            "Rate limit detected. 次の実行を待機中 (残り約{}分)",
-                            remaining_minutes
-                        );
-                        app.emit("terminal-output", &status_update).ok();
-                    }
-
-                    send_continue_to_terminal("iTerm").await?;
-                    rate_limit_count = 0;
-                }
-            } else {
-                if rate_limit_count > 0 {
-                    println!(
-                        "Rate limit not found, resetting counter from {}",
-                        rate_limit_count
-                    );
-                }
-                rate_limit_count = 0;
-            }
-        }
-    } else {
-        let start_time = std::time::Instant::now();
-        let mut had_active_session = false;
-        let mut inactive_count = 0;
-        let mut first_inactive_time: Option<std::time::Instant> = None;
-        let mut rate_limit_count = 0;
-
-        loop {
-            {
-                let cancel = cancel_flag.lock().unwrap();
-                if *cancel {
-                    return Ok(ExecutionResult {
-                        status: "cancelled".to_string(),
-                        terminal_output: None,
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            }
-
-            sleep(Duration::from_secs(60)).await;
-
-            let output = get_terminal_output("iTerm").await?;
-            app.emit("terminal-output", &output).ok();
-
-            let has_active_session = output.contains("codex") || output.contains("Codex");
-            let has_rate_limit = output.contains("rate limit") || output.contains("Rate limit");
-
-            if had_active_session && !has_active_session {
-                inactive_count += 1;
-                println!("Codex session inactive (count: {})", inactive_count);
-
-                if inactive_count == 1 {
-                    first_inactive_time = Some(std::time::Instant::now() - Duration::from_secs(60));
-                }
-
-                if inactive_count >= 3 && !has_rate_limit {
-                    let completion_time = first_inactive_time.unwrap_or(std::time::Instant::now());
-                    let elapsed = completion_time.duration_since(start_time);
-                    let minutes = elapsed.as_secs() / 60;
-                    let seconds = elapsed.as_secs() % 60;
-
-                    println!("Codex processing completed after {}m{}s", minutes, seconds);
-
-                    return Ok(ExecutionResult {
-                        status: format!("completed_in_{}m{}s", minutes, seconds),
-                        terminal_output: Some(output),
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            } else if has_active_session {
-                inactive_count = 0;
-                first_inactive_time = None;
-                had_active_session = true;
-            }
-
-            if has_rate_limit {
-                rate_limit_count += 1;
-                println!("Rate limit detected (count: {})", rate_limit_count);
-
-                if rate_limit_count >= 3 {
-                    println!("Rate limit detected (3 consecutive), terminating as auto-retry is disabled");
-                    app.emit(
-                        "terminal-output",
-                        "Rate limit detected (3回連続). 自動再実行は無効のため終了します。",
-                    )
-                    .ok();
-
-                    return Ok(ExecutionResult {
-                        status: "rate_limit_detected".to_string(),
-                        terminal_output: Some(output),
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            } else {
-                if rate_limit_count > 0 {
-                    println!(
-                        "Rate limit not found, resetting counter from {}",
-                        rate_limit_count
-                    );
-                }
-                rate_limit_count = 0;
-            }
-        }
-    }
-}
-
-async fn execute_codex_applescript_internal(
-    target_directory: &str,
-    codex_model: &str,
-    codex_approval_mode: &str,
-    codex_enable_search: bool,
-    codex_launch_options: &str,
-    codex_command: &str,
-    use_new_window: bool,
-) -> Result<String, String> {
-    // Build Codex command options
-    let mut options = Vec::new();
-
-    // Model option
-    if !codex_model.is_empty() {
-        options.push(format!("--model {}", codex_model));
-    }
-
-    // Approval mode option
-    match codex_approval_mode {
-        "auto" => {
-            options.push("--sandbox workspace-write".to_string());
-            options.push("--ask-for-approval untrusted".to_string());
-        }
-        "full-auto" => options.push("--full-auto".to_string()),
-        _ => {
-            options.push("--sandbox workspace-write".to_string());
-            options.push("--ask-for-approval on-request".to_string());
-        }
-    }
-
-    // Search option
-    if codex_enable_search {
-        options.push("--search".to_string());
-    }
-
-    if !codex_launch_options.trim().is_empty() {
-        options.push(codex_launch_options.trim().to_string());
-    }
-
-    let options_str = options.join(" ");
-
-    let escaped_target_directory = escape_applescript_string(target_directory);
-    let escaped_codex_options = escape_applescript_string(&options_str);
-    let escaped_codex_command = escape_applescript_string(codex_command);
-
-    let applescript = if use_new_window {
-        format!(
-            r#"
-property targetDirectory : "{}"
-property codexOptions : "{}"
-property codexCommand : "{}"
-
-tell application "iTerm"
-    activate
-
-    -- 新規ウィンドウを作成
-    create window with default profile
-
-    tell current session of current window
-        -- ディレクトリに移動
-        write text "cd " & quoted form of targetDirectory
-
-        -- Codex を実行
-        write text "codex " & codexOptions & " " & quoted form of codexCommand
-    end tell
-end tell
-            "#,
-            escaped_target_directory, escaped_codex_options, escaped_codex_command
-        )
-    } else {
-        format!(
-            r#"
-property codexCommand : "{}"
-
-tell application "iTerm"
-    activate
-
-    -- 現在のウィンドウの現在のセッションに命令を送信
-    if (count of windows) > 0 then
-        tell current window
-            tell current session
-                -- 命令のみを送信（Codexが既に実行されていることを前提）
-                write text codexCommand
-                -- Enterキーを送信
-                write text ""
-            end tell
-        end tell
-    else
-        error "iTermウィンドウが開いていません"
-    end if
-end tell
-            "#,
-            escaped_codex_command
-        )
+    // Create launchd config for one-time execution
+    let config = plist_manager::LaunchdConfig {
+        tool: "codex".to_string(),
+        schedule_id: schedule_id.clone(),
+        title: "1回のみの予約実行".to_string(),
+        hour,
+        minute,
+        target_directory: target_directory.clone(),
+        command_args: codex_command.clone(),
+        schedule_type: "once".to_string(),
+        interval_value: None,
+        start_date: Some(target_date.clone()),
     };
 
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(&applescript)
-        .output();
+    // Create plist and register with launchd
+    plist_manager::create_plist(&config)?;
 
-    match output {
-        Ok(output) => {
-            if output.status.success() {
-                Ok("AppleScript実行完了".to_string())
-            } else {
-                Err(format!(
-                    "AppleScriptエラー: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ))
-            }
-        }
-        Err(e) => Err(format!("実行エラー: {}", e)),
-    }
+    Ok(ExecutionResult {
+        status: "scheduled".to_string(),
+        terminal_output: Some(format!(
+            "スケジュール登録完了: {} {}:{:02} に実行予定",
+            target_date, hour, minute
+        )),
+        needs_retry: Some(false),
+        retry_time: None,
+    })
 }
 
 #[tauri::command]
 async fn execute_gemini_command(
     execution_time: String, // HH:MM format
     target_directory: String,
-    gemini_model: String,
-    gemini_approval_mode: String,
-    gemini_output_format: String,
-    gemini_include_directories: String,
-    gemini_launch_options: String,
+    _gemini_model: String,
+    _gemini_approval_mode: String,
+    _gemini_output_format: String,
+    _gemini_include_directories: String,
+    _gemini_launch_options: String,
     gemini_command: String,
-    auto_retry_on_rate_limit: bool,
-    use_new_window: bool,
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
+    _auto_retry_on_rate_limit: bool, // Not used in launchd mode
+    _use_new_window: bool, // Always true for launchd mode
+    _state: State<'_, AppState>,
+    _app: tauri::AppHandle,
 ) -> Result<ExecutionResult, String> {
-    let is_running_clone = state.gemini.is_running.clone();
-    let cancel_flag_clone = state.gemini.cancel_flag.clone();
-
-    {
-        let mut is_running = is_running_clone.lock().unwrap();
-        if *is_running {
-            return Err("Gemini CLIは既に実行中です".to_string());
-        }
-        *is_running = true;
-
-        let mut cancel_flag = cancel_flag_clone.lock().unwrap();
-        *cancel_flag = false;
-    }
-
-    // Check if target directory exists (only for new window mode)
-    if use_new_window && !std::path::Path::new(&target_directory).exists() {
-        let mut is_running = is_running_clone.lock().unwrap();
-        *is_running = false;
+    // Check if target directory exists
+    if !std::path::Path::new(&target_directory).exists() {
         return Err(format!("ディレクトリが存在しません: {}", target_directory));
-    }
-
-    if use_new_window {
-        if let Err(err) = validate_launch_options("gemini", &gemini_launch_options) {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err(err);
-        }
     }
 
     // Parse execution time
     let parts: Vec<&str> = execution_time.split(':').collect();
     if parts.len() != 2 {
-        let mut is_running = is_running_clone.lock().unwrap();
-        *is_running = false;
         return Err("時刻の形式が正しくありません".to_string());
     }
 
-    let hour: u32 = match parts[0].parse() {
-        Ok(h) => h,
-        Err(_) => {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err("時間の解析エラー".to_string());
-        }
-    };
+    let hour: u32 = parts[0].parse().map_err(|_| "時間の解析エラー".to_string())?;
+    let minute: u32 = parts[1].parse().map_err(|_| "分の解析エラー".to_string())?;
 
-    let minute: u32 = match parts[1].parse() {
-        Ok(m) => m,
-        Err(_) => {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err("分の解析エラー".to_string());
-        }
-    };
-
-    // Calculate wait time
+    // Calculate target date (today or tomorrow if time has passed)
     let now = chrono::Local::now();
-    let mut target = match chrono::Local::now()
+    let mut target = now
         .with_hour(hour)
         .and_then(|t| t.with_minute(minute))
         .and_then(|t| t.with_second(0))
-    {
-        Some(t) => t,
-        None => {
-            let mut is_running = is_running_clone.lock().unwrap();
-            *is_running = false;
-            return Err("時刻の設定エラー".to_string());
-        }
-    };
+        .ok_or("時刻の設定エラー".to_string())?;
 
-    // If target time is in the past, move to tomorrow
     if target <= now {
         target = target + chrono::Duration::days(1);
     }
 
-    let wait_duration = target.signed_duration_since(now);
-    let wait_millis = wait_duration.num_milliseconds() as u64;
+    let target_date = target.format("%Y-%m-%d").to_string();
 
-    // Wait until target time with cancellation check
-    let check_interval = Duration::from_secs(1);
-    let mut elapsed = Duration::from_millis(0);
-    let total_wait = Duration::from_millis(wait_millis);
+    // Generate schedule ID
+    let schedule_id = format!(
+        "{}{:03}",
+        now.format("%Y%m%d%H%M%S"),
+        now.timestamp_subsec_millis()
+    );
 
-    while elapsed < total_wait {
-        // Check cancel flag
-        {
-            let cancel = cancel_flag_clone.lock().unwrap();
-            if *cancel {
-                let mut is_running = is_running_clone.lock().unwrap();
-                *is_running = false;
-                return Err("実行がキャンセルされました".to_string());
-            }
-        }
-
-        sleep(check_interval).await;
-        elapsed += check_interval;
-    }
-
-    // Send event to frontend that execution is starting
-    app.emit("execution-started", "").ok();
-
-    // Execute AppleScript for Gemini CLI
-    let result = execute_gemini_applescript(
-        &target_directory,
-        &gemini_model,
-        &gemini_approval_mode,
-        &gemini_output_format,
-        &gemini_include_directories,
-        &gemini_launch_options,
-        &gemini_command,
-        auto_retry_on_rate_limit,
-        use_new_window,
-        &app,
-        cancel_flag_clone.clone(),
-    )
-    .await;
-
-    let mut is_running = is_running_clone.lock().unwrap();
-    *is_running = false;
-
-    result
-}
-
-async fn execute_gemini_applescript(
-    target_directory: &str,
-    gemini_model: &str,
-    gemini_approval_mode: &str,
-    gemini_output_format: &str,
-    gemini_include_directories: &str,
-    gemini_launch_options: &str,
-    gemini_command: &str,
-    auto_retry_on_rate_limit: bool,
-    use_new_window: bool,
-    app: &tauri::AppHandle,
-    cancel_flag: Arc<Mutex<bool>>,
-) -> Result<ExecutionResult, String> {
-    execute_gemini_applescript_internal(
-        target_directory,
-        gemini_model,
-        gemini_approval_mode,
-        gemini_output_format,
-        gemini_include_directories,
-        gemini_launch_options,
-        gemini_command,
-        use_new_window,
-    )
-    .await?;
-
-    if auto_retry_on_rate_limit {
-        let start_time = std::time::Instant::now();
-        let mut had_active_session = false;
-        let mut inactive_count = 0;
-        let mut first_inactive_time: Option<std::time::Instant> = None;
-        let mut rate_limit_count = 0;
-
-        loop {
-            {
-                let cancel = cancel_flag.lock().unwrap();
-                if *cancel {
-                    return Ok(ExecutionResult {
-                        status: "cancelled".to_string(),
-                        terminal_output: None,
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            }
-
-            sleep(Duration::from_secs(60)).await;
-
-            let output = get_terminal_output("iTerm").await?;
-            app.emit("terminal-output", &output).ok();
-
-            let has_active_session = output.contains("gemini") || output.contains("Gemini");
-            let output_lower = output.to_lowercase();
-            let has_rate_limit = output_lower.contains("rate limit")
-                || output.contains("RESOURCE_EXHAUSTED")
-                || output_lower.contains("quota")
-                || output_lower.contains("429");
-
-            if had_active_session && !has_active_session {
-                inactive_count += 1;
-
-                if inactive_count == 1 {
-                    first_inactive_time = Some(std::time::Instant::now() - Duration::from_secs(60));
-                }
-
-                if inactive_count >= 3 && !has_rate_limit {
-                    let completion_time = first_inactive_time.unwrap_or(std::time::Instant::now());
-                    let elapsed = completion_time.duration_since(start_time);
-                    let minutes = elapsed.as_secs() / 60;
-                    let seconds = elapsed.as_secs() % 60;
-
-                    return Ok(ExecutionResult {
-                        status: format!("completed_in_{}m{}s", minutes, seconds),
-                        terminal_output: Some(output),
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            } else if has_active_session {
-                inactive_count = 0;
-                first_inactive_time = None;
-                had_active_session = true;
-            }
-
-            if has_rate_limit {
-                rate_limit_count += 1;
-
-                if rate_limit_count >= 3 {
-                    let now = chrono::Local::now();
-                    let current_hour = now.hour();
-                    let current_minute = now.minute();
-
-                    let next_hour = if current_minute == 0 {
-                        current_hour
-                    } else {
-                        (current_hour + 1) % 24
-                    };
-
-                    let mut next_execution = now
-                        .with_hour(next_hour)
-                        .ok_or("時間の設定エラー")?
-                        .with_minute(1)
-                        .ok_or("分の設定エラー")?
-                        .with_second(0)
-                        .ok_or("秒の設定エラー")?;
-
-                    if next_execution <= now {
-                        next_execution = next_execution + chrono::Duration::days(1);
-                    }
-
-                    let wait_duration = next_execution.signed_duration_since(now);
-                    let wait_seconds = wait_duration.num_seconds();
-                    let wait_minutes = wait_seconds / 60;
-
-                    app.emit(
-                        "terminal-output",
-                        &format!(
-                            "Rate limit detected (3回連続). 次の実行時刻: {:02}:01 (残り約{}分)",
-                            if next_execution.day() != now.day() {
-                                (next_hour + 24) % 24
-                            } else {
-                                next_hour
-                            },
-                            wait_minutes
-                        ),
-                    )
-                    .ok();
-                    app.emit(
-                        "rate-limit-retry-scheduled",
-                        format!(
-                            "{:02}:01",
-                            if next_execution.day() != now.day() {
-                                (next_hour + 24) % 24
-                            } else {
-                                next_hour
-                            }
-                        ),
-                    )
-                    .ok();
-
-                    let mut waited = Duration::from_secs(0);
-                    let total_wait = Duration::from_secs(wait_seconds as u64);
-
-                    while waited < total_wait {
-                        {
-                            let cancel = cancel_flag.lock().unwrap();
-                            if *cancel {
-                                return Ok(ExecutionResult {
-                                    status: "cancelled".to_string(),
-                                    terminal_output: None,
-                                    needs_retry: Some(false),
-                                    retry_time: None,
-                                });
-                            }
-                        }
-
-                        sleep(Duration::from_secs(60)).await;
-                        waited += Duration::from_secs(60);
-
-                        let remaining_seconds = total_wait.as_secs() - waited.as_secs();
-                        let remaining_minutes = remaining_seconds / 60;
-                        let status_update = format!(
-                            "Rate limit detected. 次の実行を待機中 (残り約{}分)",
-                            remaining_minutes
-                        );
-                        app.emit("terminal-output", &status_update).ok();
-                    }
-
-                    send_continue_to_terminal("iTerm").await?;
-                    rate_limit_count = 0;
-                }
-            } else {
-                rate_limit_count = 0;
-            }
-        }
-    } else {
-        let start_time = std::time::Instant::now();
-        let mut had_active_session = false;
-        let mut inactive_count = 0;
-        let mut first_inactive_time: Option<std::time::Instant> = None;
-        let mut rate_limit_count = 0;
-
-        loop {
-            {
-                let cancel = cancel_flag.lock().unwrap();
-                if *cancel {
-                    return Ok(ExecutionResult {
-                        status: "cancelled".to_string(),
-                        terminal_output: None,
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            }
-
-            sleep(Duration::from_secs(60)).await;
-
-            let output = get_terminal_output("iTerm").await?;
-            app.emit("terminal-output", &output).ok();
-
-            let has_active_session = output.contains("gemini") || output.contains("Gemini");
-            let output_lower = output.to_lowercase();
-            let has_rate_limit = output_lower.contains("rate limit")
-                || output.contains("RESOURCE_EXHAUSTED")
-                || output_lower.contains("quota")
-                || output_lower.contains("429");
-
-            if had_active_session && !has_active_session {
-                inactive_count += 1;
-
-                if inactive_count == 1 {
-                    first_inactive_time = Some(std::time::Instant::now() - Duration::from_secs(60));
-                }
-
-                if inactive_count >= 3 && !has_rate_limit {
-                    let completion_time = first_inactive_time.unwrap_or(std::time::Instant::now());
-                    let elapsed = completion_time.duration_since(start_time);
-                    let minutes = elapsed.as_secs() / 60;
-                    let seconds = elapsed.as_secs() % 60;
-
-                    return Ok(ExecutionResult {
-                        status: format!("completed_in_{}m{}s", minutes, seconds),
-                        terminal_output: Some(output),
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            } else if has_active_session {
-                inactive_count = 0;
-                first_inactive_time = None;
-                had_active_session = true;
-            }
-
-            if has_rate_limit {
-                rate_limit_count += 1;
-
-                if rate_limit_count >= 3 {
-                    app.emit(
-                        "terminal-output",
-                        "Rate limit detected (3回連続). 自動再実行は無効のため終了します。",
-                    )
-                    .ok();
-
-                    return Ok(ExecutionResult {
-                        status: "rate_limit_detected".to_string(),
-                        terminal_output: Some(output),
-                        needs_retry: Some(false),
-                        retry_time: None,
-                    });
-                }
-            } else {
-                rate_limit_count = 0;
-            }
-        }
-    }
-}
-
-async fn execute_gemini_applescript_internal(
-    target_directory: &str,
-    gemini_model: &str,
-    gemini_approval_mode: &str,
-    gemini_output_format: &str,
-    gemini_include_directories: &str,
-    gemini_launch_options: &str,
-    gemini_command: &str,
-    use_new_window: bool,
-) -> Result<String, String> {
-    let mut options = Vec::new();
-
-    if !gemini_model.is_empty() {
-        options.push(format!("--model {}", gemini_model));
-    }
-
-    if gemini_output_format == "json" {
-        options.push("--output-format json".to_string());
-    }
-
-    let include_directories = gemini_include_directories
-        .split(',')
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>();
-    if !include_directories.is_empty() {
-        let directories_csv = include_directories.join(",");
-        options.push(format!(
-            "--include-directories \"{}\"",
-            directories_csv.replace('"', "\\\"")
-        ));
-    }
-
-    match gemini_approval_mode {
-        "auto_edit" => options.push("--approval-mode auto_edit".to_string()),
-        "yolo" => options.push("--yolo".to_string()),
-        _ => {}
-    }
-
-    if !gemini_launch_options.trim().is_empty() {
-        options.push(gemini_launch_options.trim().to_string());
-    }
-
-    let options_str = options.join(" ");
-
-    let escaped_target_directory = escape_applescript_string(target_directory);
-    let escaped_gemini_options = escape_applescript_string(&options_str);
-    let escaped_gemini_command = escape_applescript_string(gemini_command);
-
-    let applescript = if use_new_window {
-        format!(
-            r#"
-property targetDirectory : "{}"
-property geminiOptions : "{}"
-property geminiCommand : "{}"
-
-tell application "iTerm"
-    activate
-
-    -- 新規ウィンドウを作成
-    create window with default profile
-
-    tell current session of current window
-        -- ディレクトリに移動
-        write text "cd " & quoted form of targetDirectory
-
-        -- Gemini CLI を実行
-        write text "gemini " & geminiOptions & " --prompt " & quoted form of geminiCommand
-    end tell
-end tell
-            "#,
-            escaped_target_directory, escaped_gemini_options, escaped_gemini_command
-        )
-    } else {
-        format!(
-            r#"
-property geminiCommand : "{}"
-
-tell application "iTerm"
-    activate
-
-    -- 現在のウィンドウの現在のセッションに命令を送信
-    if (count of windows) > 0 then
-        tell current window
-            tell current session
-                -- 命令のみを送信（Gemini CLIが既に実行されていることを前提）
-                write text geminiCommand
-                -- Enterキーを送信
-                write text ""
-            end tell
-        end tell
-    else
-        error "iTermウィンドウが開いていません"
-    end if
-end tell
-            "#,
-            escaped_gemini_command
-        )
+    // Create launchd config for one-time execution
+    let config = plist_manager::LaunchdConfig {
+        tool: "gemini".to_string(),
+        schedule_id: schedule_id.clone(),
+        title: "1回のみの予約実行".to_string(),
+        hour,
+        minute,
+        target_directory: target_directory.clone(),
+        command_args: gemini_command.clone(),
+        schedule_type: "once".to_string(),
+        interval_value: None,
+        start_date: Some(target_date.clone()),
     };
 
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(&applescript)
-        .output();
+    // Create plist and register with launchd
+    plist_manager::create_plist(&config)?;
 
-    match output {
-        Ok(output) => {
-            if output.status.success() {
-                Ok("AppleScript実行完了".to_string())
-            } else {
-                Err(format!(
-                    "AppleScriptエラー: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ))
-            }
-        }
-        Err(e) => Err(format!("実行エラー: {}", e)),
-    }
+    Ok(ExecutionResult {
+        status: "scheduled".to_string(),
+        terminal_output: Some(format!(
+            "スケジュール登録完了: {} {}:{:02} に実行予定",
+            target_date, hour, minute
+        )),
+        needs_retry: Some(false),
+        retry_time: None,
+    })
 }
 
 #[tauri::command]
@@ -2210,6 +1020,15 @@ pub fn run() {
                 is_running: Arc::new(Mutex::new(false)),
                 cancel_flag: Arc::new(Mutex::new(false)),
             },
+        })
+        .setup(|app| {
+            let state = app.state::<AppState>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = run_missed_schedules(state).await {
+                    eprintln!("Failed to run missed schedules: {}", err);
+                }
+            });
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             execute_claude_command,
