@@ -342,6 +342,13 @@ pub fn create_plist(config: &LaunchdConfig) -> Result<String, String> {
             Value::String(s) => {
                 plist_xml.push_str(&format!("\t<string>{}</string>\n", escape_xml(s)));
             }
+            Value::Boolean(b) => {
+                if *b {
+                    plist_xml.push_str("\t<true/>\n");
+                } else {
+                    plist_xml.push_str("\t<false/>\n");
+                }
+            }
             Value::Dictionary(dict) => {
                 plist_xml.push_str("\t<dict>\n");
                 for (k, v) in dict {

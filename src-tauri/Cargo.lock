@@ -3556,7 +3556,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-cli-scheduler"
-version = "26.1.15"
+version = "26.1.17"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
